@@ -536,9 +536,13 @@ DRV_CONFIG:
 	ret
 	
 .GetNumDrives:
+	bit 5,c         ;Single drive per driver requested?
+    ld b,1
+    ld a,0
+    ret nz
 	
 	call	RomDiskCheck
-	ld	b,3			; Three drives: ROM disk, SD 1 and SD 2
+	ld	b,NUM_SLOTS+1			; Three drives: ROM disk, SD 1 and SD 2
 	jr	z,.GetNumDrives2
 
 	dec	b			; ROM Disk not available
@@ -2149,30 +2153,30 @@ PRINT:
 ;-----------------------------------------------------------------------------
 
 VERSION_STRING macro v_main, v_sub
-db	"Version &v_main&.&v_sub&\r\n"
+db	"Version &v_main&.&v_sub&",13,10
 endm
 
 TXT_INFO:
-		db	"MegaFlashROM SCC+ SD driver\r\n"
+		db	"MegaFlashROM SCC+ SD driver",13,10
 		VERSION_STRING %DRIVER_VERSION,%DRIVER_SUBVERSION
-		db	"(c) Manuel Pazos 2013\r\n"
+		db	"(c) Manuel Pazos 2013",13,10
 TXT_EMPTY:		
-		dz	"\r\n"
+		db	13,10,0
 
 TXT_INIT:
-		dz	"SD card slot "
+		db	"SD card slot ",0
 
 TXT_ROMDSKOK:
-		dz	"ROM disk found.\r\n"
+		db	"ROM disk found.",13,10,0
 
 TXT_MMC:
-		dz	"MMC\r\n"
+		db	"MMC",13,10,0
 TXT_SD1x:
-		dz	"SDSC 1.x\r\n"
+		db	"SDSC 1.x",13,10,0
 TXT_SD2x:
-		dz	"SDSC 2.x\r\n"
+		db	"SDSC 2.x",13,10,0
 TXT_SDHC:
-		dz	"SDHC\r\n"
+		db	"SDHC",13,10,0
 	
 IDX_TYPE:
 		dw	TXT_MMC
