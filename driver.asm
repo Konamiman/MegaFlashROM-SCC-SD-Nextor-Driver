@@ -9,7 +9,7 @@
 
 	.RELAB
 
-	INCLUDE ../../../../sdk/asm/macros/undoc.inc
+	INCLUDE asm/macros/undoc.inc
 
 ;---------------------------------------------------------------------------
 ; MACROS
@@ -68,8 +68,8 @@ CODE_ADD:	equ	0F2EDh
 
 ; BIOS
 
-	INCLUDE ../../../../sdk/asm/constants/msx_bios.inc
-	INCLUDE ../../../../sdk/asm/constants/msx_workarea.inc
+	INCLUDE asm/constants/msx_bios.inc
+	INCLUDE asm/constants/msx_workarea.inc
 
 RSLREG:		equ	#138
 
@@ -90,19 +90,19 @@ VER_REV		equ	0
 ; the references with ":"; see the Nestor80 LanguageReference
 ; ("Relative labels") for the exact rule.
 
-	INCLUDE ../../../../sdk/asm/constants/dos_errors.inc
+	INCLUDE asm/constants/dos_errors.inc
 
-	INCLUDE ../../../../sdk/asm/constants/driver_result_codes.inc
+	INCLUDE asm/constants/driver_result_codes.inc
 
 	module DRIVER_QUERY
-	INCLUDE ../../../../sdk/asm/constants/driver_driver_queries.inc
+	INCLUDE asm/constants/driver_driver_queries.inc
 	endmod
 
 	module DEVICE_QUERY
-	INCLUDE ../../../../sdk/asm/constants/driver_device_queries.inc
+	INCLUDE asm/constants/driver_device_queries.inc
 	endmod
 
-	INCLUDE ../../../../sdk/asm/constants/rom_bank_header.inc
+	INCLUDE asm/constants/rom_bank_header.inc
 
 ;-----------------------------------------------------------------------------
 ; Start
@@ -2054,7 +2054,7 @@ PRINT:
 	inc	de
 	jr	PRINT
 
-	INCLUDE ../../../../sdk/asm/code/output_string.asm
+	INCLUDE asm/code/output_string.asm
 
 ;-----------------------------------------------------------------------------
 ; Includes

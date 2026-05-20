@@ -1,0 +1,158 @@
+# MegaFlashROM SCC+ SD driver for Nextor
+
+This repository contains the [MegaFlashROM SCC+ SD](https://www.msxcartridgeshop.com/) (a.k.a. MFRSD) driver for [Nextor](https://github.com/Konamiman/Nextor). It produces a Nextor ROM image that combines a Nextor kernel (v3.0 or newer) base file with this driver, ready to be flashed to the MegaFlashROM SCC+ SD cartridge.
+
+Four variants are built by default:
+
+| Output                                                  | Notes                                                                             |
+| ------------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `Nextor-<ver>.MegaFlashSDSCC.1-slot.ROM`                | One SD card slot.                                                                 |
+| `Nextor-<ver>.MegaFlashSDSCC.1-slot.Recovery.ROM`       | Same as above with a 512-byte header for use as the cartridge's recovery payload. |
+| `Nextor-<ver>.MegaFlashSDSCC.2-slots.ROM`               | Two SD card slots.                                                                |
+| `Nextor-<ver>.MegaFlashSDSCC.2-slots.Recovery.ROM`      | Same as above with the recovery header.                                           |
+
+`<ver>` and any kernel-base variant suffix (e.g. `.NO_UNDOC.SHIFT_INV`) are picked up automatically from the `NEXTOR_BASE` filename, see [Building](#building) below.
+
+The 1-slot vs 2-slots distinction matches the hardware configuration of the cartridge. The Recovery variants are intended to be saved on the SD card and loaded from the cartridge's recovery menu; the regular variants are flashed directly to the cartridge ROM.
+
+## Repository contents
+
+| File                  | Purpose                                                                                              |
+| --------------------- | ---------------------------------------------------------------------------------------------------- |
+| `driver.asm`          | The MFRSD driver. Pulls in `romdisk.asm` via an `include`.                                           |
+| `romdisk.asm`         | ROM-disk feature included from `driver.asm`.                                                         |
+| `recovery_header.asm` | 512-byte identification header prepended to the Recovery variants.                                   |
+| `Makefile`            | Build rules; see below.                                                                              |
+| `external/Nextor`     | Git submodule pointing at the Nextor repo, sparse-checkout to the `sdk/` directory only.             |
+
+The ASCII8 bank-switching routine consumed by the cartridge mapper comes from the Nextor SDK (`asm/chgbnk/ascii8.asm`), so it isn't vendored in this repo.
+
+## Development environment
+
+You need:
+
+- [**Nestor80**](https://github.com/Konamiman/Nestor80) (`N80`) on your `PATH`, or pointed at via the `N80` make variable.
+- **`mknexrom`** on your `PATH`, or pointed at via the `MKNEXROM` make variable. The source lives in the Nextor repository under `buildtools/sources/mknexrom.c`.
+- A POSIX **`make`** and `cat`.
+
+## Cloning the repository
+
+This repository uses a git submodule to pull in the Nextor SDK; clone with `--recurse-submodules` and then configure the submodule for a sparse checkout of the `sdk/` directory (the only thing this driver consumes from Nextor):
+
+```sh
+git clone --recurse-submodules https://github.com/Konamiman/MegaFlashROM-SD-Nextor-driver.git [<target-dir>]
+cd <target-dir>/external/Nextor
+git sparse-checkout init --cone
+git sparse-checkout set sdk
+cd ../..
+```
+
+If you already cloned without `--recurse-submodules`, run `git submodule update --init` first.
+
+If you have a local clone of Nextor and want the submodule to point at it (e.g. while developing the SDK locally), override the URL once:
+
+```sh
+git config submodule.external/Nextor.url /path/to/your/local/Nextor
+git submodule sync
+git submodule update --init
+```
+
+### If you'd rather not fetch the full Nextor repository
+
+The sequence above clones the entire Nextor repository before the sparse-checkout limits the working tree. If you'd rather only fetch the SDK files (typically <100 KB instead of tens of MB), clone the driver *without* `--recurse-submodules` and then set up the submodule as a blobless partial clone with sparse-checkout from the start:
+
+```sh
+git clone https://github.com/Konamiman/MegaFlashROM-SD-Nextor-driver.git [<target-dir>]
+cd <target-dir>
+git submodule init external/Nextor
+git submodule update --init --filter=blob:none external/Nextor
+git -C external/Nextor sparse-checkout init --cone
+git -C external/Nextor sparse-checkout set sdk
+git -C external/Nextor checkout
+```
+
+...or, equivalently, just `make setup`:
+
+```sh
+git clone https://github.com/Konamiman/MegaFlashROM-SD-Nextor-driver.git [<target-dir>]
+cd <target-dir>
+make setup
+```
+
+## Building
+
+The build needs a Nextor kernel base file, supplied via `NEXTOR_BASE`:
+
+```sh
+NEXTOR_BASE=/path/to/Nextor-3.0.0.base.dat make
+```
+
+That produces all four ROM variants in the `bin/` directory.
+
+For an undoc-instruction-free build (compatible with Z180-based MSX machines), pair an undoc-free kernel base with the matching driver-side flag:
+
+```sh
+NEXTOR_BASE=/path/to/Nextor-3.0.0.base.NO_UNDOC.dat \
+NO_UNDOC_CPU_INSTRUCTIONS=1 \
+make
+```
+
+The Nextor base filename's version and variant suffix (e.g. `.NO_UNDOC.SHIFT_INV`) are mirrored in the output ROM filenames. **You are responsible for keeping `NO_UNDOC_CPU_INSTRUCTIONS` consistent with the base file's variant**: the Makefile does not infer it for you.
+
+### Building without `make`
+
+The Makefile is the recommended way, but each ROM is produced by just three tool invocations: two `N80` calls (one for the driver, one for the bank-switching routine) and one `mknexrom` call that combines them with the kernel base. The Recovery variants then prepend a small header binary on top. Here's the sequence for the regular 1-slot variant:
+
+```sh
+mkdir -p tmp
+
+# Assemble the driver for 1 SD slot  ->  tmp/driver.1slot.bin
+N80 driver.asm tmp/driver.1slot.bin \
+    --no-string-escapes --build-type abs --output-file-extension bin \
+    --include-directory external/Nextor/sdk \
+    --define-symbols NUM_SLOTS=1
+
+# Assemble the ASCII8 bank-switching routine from the SDK  ->  tmp/chgbnk.bin
+N80 external/Nextor/sdk/asm/chgbnk/ascii8.asm tmp/chgbnk.bin \
+    --no-string-escapes --build-type abs --output-file-extension bin \
+    --include-directory external/Nextor/sdk
+
+# Combine kernel base + driver + chgbnk  ->  Nextor-<ver>.MegaFlashSDSCC.1-slot.ROM
+mknexrom /path/to/Nextor-<ver>.base.dat Nextor-<ver>.MegaFlashSDSCC.1-slot.ROM \
+    /d:tmp/driver.1slot.bin /m:tmp/chgbnk.bin
+```
+
+The other three variants are slight modifications of the same recipe:
+
+- **2-slots**: change `--define-symbols NUM_SLOTS=1` to `NUM_SLOTS=2`, write the driver to a different filename (e.g. `tmp/driver.2slots.bin`), and pick the matching `Nextor-<ver>.MegaFlashSDSCC.2-slots.ROM` output name.
+- **Recovery**: assemble `recovery_header.asm` into a small `.bin`, then concatenate it in front of the corresponding regular ROM:
+  ```sh
+  N80 recovery_header.asm tmp/ \
+      --no-string-escapes --build-type abs --output-file-extension bin \
+      --include-directory external/Nextor/sdk
+  cat tmp/recovery_header.bin Nextor-<ver>.MegaFlashSDSCC.1-slot.ROM \
+      > Nextor-<ver>.MegaFlashSDSCC.1-slot.Recovery.ROM
+  ```
+- **NO_UNDOC**: add `--define-symbols NO_UNDOC_CPU_INSTRUCTIONS` to *every* `N80` call (regardless of which variant you're building), and use a `Nextor-<ver>.base.NO_UNDOC.dat` kernel base. The driver-side and base-side undoc settings must match.
+
+## Make variables
+
+| Variable                    | Purpose                                                              | Default                  |
+| --------------------------- | -------------------------------------------------------------------- | ------------------------ |
+| `NEXTOR_BASE`               | Path to the Nextor kernel base `.dat` file (mandatory).              | _(unset; error)_         |
+| `NEXTOR_SDK`                | Path to the Nextor SDK directory (the one containing `asm/`).        | `external/Nextor/sdk`    |
+| `N80`                       | Path to the Nestor80 assembler.                                      | `N80` (from `PATH`)      |
+| `MKNEXROM`                  | Path to the `mknexrom` tool.                                         | `mknexrom` (from `PATH`) |
+| `NO_UNDOC_CPU_INSTRUCTIONS` | If set (e.g. `=1`), assemble the driver without undocumented opcodes. | _(unset)_                |
+
+Cleanup targets:
+
+| Target           | Effect                                                                                                          |
+| ---------------- | --------------------------------------------------------------------------------------------------------------- |
+| `make clean`     | Removes `tmp/` (intermediate `.bin` files and helper artifacts). `bin/` and the shippable ROMs in it are kept.  |
+| `make clean-bin` | Removes `bin/` (the shippable ROMs).                                                                            |
+| `make distclean` | Removes both `tmp/` and `bin/`.                                                                                 |
+
+## License
+
+MIT - see [LICENSE](LICENSE). Note that [Nextor itself has a different license](https://github.com/Konamiman/Nextor/blob/v3.0/LICENSE.md).
