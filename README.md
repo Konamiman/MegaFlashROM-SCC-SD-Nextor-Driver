@@ -2,6 +2,8 @@
 
 This repository contains the [MegaFlashROM SCC+ SD](https://www.msxcartridgeshop.com/) (a.k.a. MFRSD) driver for [Nextor](https://github.com/Konamiman/Nextor). It produces a Nextor ROM image that combines a Nextor kernel (v3.0 or newer) base file with this driver, ready to be flashed to the MegaFlashROM SCC+ SD cartridge.
 
+The driver was originally developed by Manuel Pazos, who kindly provided the source code and gave permission for its publication.
+
 Four variants are built by default:
 
 | Output                                                  | Notes                                                                             |

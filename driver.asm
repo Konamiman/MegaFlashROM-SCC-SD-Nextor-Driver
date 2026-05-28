@@ -4,7 +4,8 @@
 ; By Manuel Pazos 14/12/2012
 ;
 ; 24/07/2018 - v1.3 Implement DRV_CONFIG routine (Nextor 2.0.5)
-; v1.4 - Adapt to Nextor 3
+; 26/04/2025 - v1.4 Added SDXC cards identification
+; 30/05/2025 - v1.5 Fixed SD card type identification
 ;-----------------------------------------------------------------------------
 
 	.RELAB
@@ -60,6 +61,7 @@ CARD_MMC	equ	0
 CARD_SD1X	equ	1
 CARD_SD2X	equ	2
 CARD_SDHC	equ	3
+CARD_SDXC	equ	4
 
 
 ;This is a 2 byte buffer to store the address of code to be executed.
@@ -80,7 +82,7 @@ MUL_DAT_TKN_END	equ	#FD
 
 ;Driver version
 VER_MAIN	equ	1
-VER_SEC		equ	4
+VER_SEC		equ	5
 VER_REV		equ	0
 
 
@@ -1230,21 +1232,15 @@ SD_OFF:
 ;             E = 3 SDHC 2.0 or higher
 ;-----------------------------------------------------------------------------
 InitSD:
+	res	BIT_SDHC,(ix+STATUS)	; Set SDSC as default
+
 	call	InitSD0
 	ret	c			; Timeout (card removed or damaged?)
 	ret	nz			; Command error
 
-	;call	GETWRK			; Ya debería tener en IX el workarea
-	
-	res	BIT_SDHC,(ix+STATUS)	; Set SDSC as default
-	
-	ld	a,CARD_SDHC		; Is a SDHC card?
-	cp	e
-	jr	nz,.notSDHC
-	
-	set	BIT_SDHC,(ix+STATUS)	; set SDHC flag
-	
-.notSDHC:
+	; The SDHC flag (BIT_SDHC) is set inside InitSD2 when the card is
+	; identified as SDHC or SDXC.
+
 	set	BIT_SD_CHG,(ix+STATUS)	; SD Card has changed
 	xor	a
 	ret
@@ -1325,9 +1321,26 @@ InitSD2loop:
 	bit	6,a	; bit 30
 
 	ld	e,CARD_SD2X
-	jr	z,NOT_SDHC
+	jr	z,.end
+
+	; The card is SDHC or SDXC
+	set	BIT_SDHC,(ix+STATUS)	; set SDHC flag
+
+	; The maximum value of C_SIZE for SDHC in CSD Version 2.0 is 00FF5Fh (65375).
+	; #FF5F * 512 = #1FEBE00
+	call	GetSectNum
+	call	nc,WaitBusy
+
+	or	a
+	ex	de,hl
+	ld	de,#1ff		; Min. SDXC size > Max. SDHC size
+	sbc	hl,de
+
+	ld	e,CARD_SDHC
+	jr	c,.end
+
 	inc	e
-NOT_SDHC:
+.end:
 	xor	a
 	ret
 
@@ -2092,6 +2105,8 @@ TXT_SD2x:
 		db	" SDSC 2.x",13,10,0
 TXT_SDHC:
 		db	" SDHC",13,10,0
+TXT_SDXC:
+		db	" SDXC",13,10,0
 
 SDSLOT_1_S:
 		db	"SD card slot 1",0
@@ -2108,6 +2123,7 @@ IDX_TYPE:
 		dw	TXT_SD1x
 		dw	TXT_SD2x
 		dw	TXT_SDHC
+		dw	TXT_SDXC
 	
 ;-----------------------------------------------------------------------------
 ; End of the driver code
