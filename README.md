@@ -25,17 +25,19 @@ The 1-slot vs 2-slots distinction matches the hardware configuration of the cart
 | `romdisk.asm`         | ROM-disk feature included from `driver.asm`.                                                         |
 | `recovery_header.asm` | 512-byte identification header prepended to the Recovery variants.                                   |
 | `Makefile`            | Build rules; see below.                                                                              |
+| `docker-build.sh`     | Wrapper that builds the ROMs in the Nextor dev Docker image (no local toolchain needed).             |
 | `external/Nextor`     | Git submodule pointing at the Nextor repo, sparse-checkout to the `sdk/` directory only.             |
 
 The ASCII8 bank-switching routine consumed by the cartridge mapper comes from the Nextor SDK (`asm/chgbnk/ascii8.asm`), so it isn't vendored in this repo.
 
 ## Development environment
 
-You need:
+The quickest path needs **nothing but Docker**: see [Building with the Nextor dev Docker image](#building-with-the-nextor-dev-docker-image) below, which supplies the toolchain, the SDK and the kernel base files for you (no submodule or base file to fetch). To build with a local toolchain instead, you need:
 
 - [**Nestor80**](https://github.com/Konamiman/Nestor80) (`N80`) on your `PATH`, or pointed at via the `N80` make variable.
 - **`mknexrom`** on your `PATH`, or pointed at via the `MKNEXROM` make variable. The source lives in the Nextor repository under `buildtools/sources/mknexrom.c`.
 - A POSIX **`make`** and `cat`.
+- A Nextor kernel base file and the Nextor SDK (the `external/Nextor` submodule, set up with `make setup`).
 
 ## Cloning the repository
 
@@ -82,6 +84,25 @@ make setup
 ```
 
 ## Building
+
+There are two ways to build: with the **Nextor dev Docker image** (no local toolchain, SDK or kernel base file needed) or with a **local toolchain**.
+
+### Building with the Nextor dev Docker image
+
+The [`nextor-dev`](https://github.com/Konamiman/Nextor/pkgs/container/nextor-dev) image bundles `N80`, `mknexrom`, the Nextor SDK and all six kernel base-file variants, and presets `NEXTOR_BASE` / `NEXTOR_SDK`, so a build needs nothing else on your machine - not even the `external/Nextor` submodule. The `docker-build.sh` wrapper runs the build in a container, mounting this repository and writing the ROMs into `bin/` owned by you (not root):
+
+```sh
+./docker-build.sh                       # all four ROMs, default kernel base
+./docker-build.sh --variant NO_UNDOC    # build against the NO_UNDOC kernel base
+./docker-build.sh --variant CTRL_INV
+./docker-build.sh --variant NO_UNDOC.SHIFT_INV
+./docker-build.sh --variant all         # build against every base variant
+./docker-build.sh clean                 # any extra args are passed to make
+```
+
+`--variant <suffix>` selects one of the image's kernel base files (`kernel_base<suffix>.dat`); the available suffixes are `NO_UNDOC`, `SHIFT_INV`, `CTRL_INV`, `NO_UNDOC.SHIFT_INV` and `NO_UNDOC.CTRL_INV`. A `*NO_UNDOC*` variant also assembles the driver undoc-free automatically, and the variant suffix is reflected in the output ROM names exactly as with a local build. This repo builds four ROMs per base variant, so `--variant all` builds against every one of the six base variants in a single container (24 ROMs in all). Run `./docker-build.sh --help` for the full list.
+
+### Building with a local toolchain
 
 The build needs a Nextor kernel base file, supplied via `NEXTOR_BASE`:
 
