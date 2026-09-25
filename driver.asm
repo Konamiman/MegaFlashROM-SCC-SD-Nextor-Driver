@@ -6,6 +6,7 @@
 ; 24/07/2018 - v1.3 Implement DRV_CONFIG routine (Nextor 2.0.5)
 ; 26/04/2025 - v1.4 Added SDXC cards identification
 ; 30/05/2025 - v1.5 Fixed SD card type identification
+; 01/10/2026 - v1.6 Implement the READ_BEFORE_INIT query
 ;-----------------------------------------------------------------------------
 
 	.RELAB
@@ -82,7 +83,7 @@ MUL_DAT_TKN_END	equ	#FD
 
 ;Driver version
 VER_MAIN	equ	1
-VER_SEC		equ	5
+VER_SEC		equ	6
 VER_REV		equ	0
 
 
