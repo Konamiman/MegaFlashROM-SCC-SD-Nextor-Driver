@@ -252,9 +252,11 @@ DEVICE_QUERY:
 	dec a
 	jr z,DO_DEVQ_GET_PARAMS
 	dec a
-	jr z,DO_DEVQ_GET_STATUS
+	jp z,DO_DEVQ_GET_STATUS
 	dec a
-	jr z,DO_DEVQ_GET_AVAILABILITY
+	jp z,DO_DEVQ_GET_AVAILABILITY
+	cp 8-4
+	jp z,DO_DEVQ_READ_BEFORE_INIT
 	ld a,RESULT_NOT_IMPLEMENTED
 	ret
 
@@ -266,7 +268,7 @@ INVALID_DEVICE:
 DO_DEVQ_GET_STRING:
 	ld a,b
 	or a
-	jr z,RETURN_NOT_IMP
+	jp z,RETURN_NOT_IMP
 
 	cp 4 ;Get device name
 	ld a,c ;Device number
@@ -303,11 +305,25 @@ DO_DEVQ_GET_PARAMS:
 
 	ld a,c
 	ld b,1
+	push af
 	push hl
 	call NEXTOR2_LUN_INFO
 	pop ix
+	pop bc	;B = Device number
 	or a
-	ret z
+	jr nz,DO_DEVQ_GET_PARAMS_DEF
+
+	;The ROM disk must not be used by Nextor for its persistent storage
+	;(it's read only, and it's not the device the user boots from)
+	ld a,b
+	cp 3
+	jr nz,DO_DEVQ_GET_PARAMS_OK
+	set 4,(ix+7)
+DO_DEVQ_GET_PARAMS_OK:
+	xor a
+	ret
+
+DO_DEVQ_GET_PARAMS_DEF:
 
 	;Assume error is "device not available" (we checked the device id first),
 	;then return default parameters but with removable bit set
@@ -324,6 +340,55 @@ DO_DEVQ_GET_PARAMS:
 	ld (ix+9),a
 	ld (ix+10),a
 	ld (ix+11),a
+	ret
+
+	;--- Device query 8: read device sectors before initialization.
+	;
+	;    Nextor uses this at boot time to read its persistent storage file
+	;    before the driver has been initialized, so nothing must be printed.
+	;    The work area is in SLTWRK and is all zeros at this point: the card
+	;    is initialized here, and again later by the driver initialization.
+	;
+	;    Input:  C  = Device number (already validated)
+	;            B  = Number of sectors to read
+	;            HL = Destination address
+	;            DE = Address of the 4 byte sector number
+	;    Output: A  = Error code, as in READ_WRITE
+
+DO_DEVQ_READ_BEFORE_INIT:
+	ld a,c
+	cp 3
+	ld a,:.IDEVN	;The ROM disk is excluded from the persistent storage
+	ret z
+
+	ld a,c
+	dec a	;0 for slot 1, 1 for slot 2
+	di
+	call SD_ON
+	ld (#5800),a	;SD slot select
+	call GETWRK
+
+	push hl
+	push de
+	push bc
+	call InitSD
+	pop bc
+	pop de
+	pop hl
+	jr c,DO_DEVQ_RBI_NRDY	;Timeout: no card
+	jr nz,DO_DEVQ_RBI_NRDY
+
+	call ReadSD
+	call SD_OFF
+	ei
+	ret c	;A = Error code
+	xor a
+	ret
+
+DO_DEVQ_RBI_NRDY:
+	call SD_OFF
+	ei
+	ld a,:.NRDY
 	ret
 
 DO_DEVQ_GET_AVAILABILITY:
