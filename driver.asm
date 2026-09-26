@@ -6,6 +6,7 @@
 ; 24/07/2018 - v1.3 Implement DRV_CONFIG routine (Nextor 2.0.5)
 ; 26/04/2025 - v1.4 Added SDXC cards identification
 ; 30/05/2025 - v1.5 Fixed SD card type identification
+; 01/10/2026 - v1.6 Implement the READ_BEFORE_INIT query
 ;-----------------------------------------------------------------------------
 
 	.RELAB
@@ -82,7 +83,7 @@ MUL_DAT_TKN_END	equ	#FD
 
 ;Driver version
 VER_MAIN	equ	1
-VER_SEC		equ	5
+VER_SEC		equ	6
 VER_REV		equ	0
 
 
@@ -252,9 +253,11 @@ DEVICE_QUERY:
 	dec a
 	jr z,DO_DEVQ_GET_PARAMS
 	dec a
-	jr z,DO_DEVQ_GET_STATUS
+	jp z,DO_DEVQ_GET_STATUS
 	dec a
-	jr z,DO_DEVQ_GET_AVAILABILITY
+	jp z,DO_DEVQ_GET_AVAILABILITY
+	cp 8-4
+	jp z,DO_DEVQ_READ_BEFORE_INIT
 	ld a,RESULT_NOT_IMPLEMENTED
 	ret
 
@@ -266,7 +269,7 @@ INVALID_DEVICE:
 DO_DEVQ_GET_STRING:
 	ld a,b
 	or a
-	jr z,RETURN_NOT_IMP
+	jp z,RETURN_NOT_IMP
 
 	cp 4 ;Get device name
 	ld a,c ;Device number
@@ -303,11 +306,25 @@ DO_DEVQ_GET_PARAMS:
 
 	ld a,c
 	ld b,1
+	push af
 	push hl
 	call NEXTOR2_LUN_INFO
 	pop ix
+	pop bc	;B = Device number
 	or a
-	ret z
+	jr nz,DO_DEVQ_GET_PARAMS_DEF
+
+	;The ROM disk must not be used by Nextor for its persistent storage
+	;(it's read only, and it's not the device the user boots from)
+	ld a,b
+	cp 3
+	jr nz,DO_DEVQ_GET_PARAMS_OK
+	set 4,(ix+7)
+DO_DEVQ_GET_PARAMS_OK:
+	xor a
+	ret
+
+DO_DEVQ_GET_PARAMS_DEF:
 
 	;Assume error is "device not available" (we checked the device id first),
 	;then return default parameters but with removable bit set
@@ -459,28 +476,31 @@ NEXTOR2_DRV_INIT:
 		pop	af
 		;*
 
-		jr	c,.notCard
-		jr	nz,.notCard
+		ld	hl,TXT_NOCARD
+		jr	c,.showCard
+		jr	nz,.showCard
 
-		ld	b,e		; Card type
+		ld	a,e		; Card type
+		rlca
+		ld	hl,IDX_TYPE
+		ADD_HL_A
+		ld	a,(hl)
+		inc	hl
+		ld	h,(hl)
+		ld	l,a
+.showCard:
+		push	hl		; Card type text
 		ld	de,TXT_INIT
 		call	PRINT		; Card init text
-	
+
 		ld	a,c			; SD slot
 		add	a,'1'
 		call	DO_CHPUT
 		ld	a,':'
 		call	DO_CHPUT
-		
-		ld	a,b		; Card type
-		rlca
-		ld	hl,IDX_TYPE
-		ADD_HL_A
-		ld	e,(hl)
-		inc	hl
-		ld	d,(hl)
+
+		pop	de
 		call	PRINT		; Shows card type
-.notCard:
 		pop	bc
 		djnz	.loop
 		
@@ -661,6 +681,59 @@ NEXTOR2_DEV_RW:
 	jr	c,.writeError	; Can't write in ROM
 
 	jp	RomDiskRead
+
+
+	;--- Device query 8: read device sectors before initialization.
+	;
+	;    Nextor uses this at boot time to read its persistent storage file
+	;    before the driver has been initialized, so nothing must be printed.
+	;    The work area is in SLTWRK and is all zeros at this point: the card
+	;    is initialized here, and again later by the driver initialization.
+	;
+	;    This must be above #6000 (like all the code that calls SD_ON),
+	;    since SD_ON replaces #4000-#5FFF with the SD control area.
+	;
+	;    Input:  C  = Device number (already validated)
+	;            B  = Number of sectors to read
+	;            HL = Destination address
+	;            DE = Address of the 4 byte sector number
+	;    Output: A  = Error code, as in READ_WRITE
+
+DO_DEVQ_READ_BEFORE_INIT:
+	ld a,c
+	cp 3
+	ld a,:.IDEVN	;The ROM disk is excluded from the persistent storage
+	ret z
+
+	ld a,c
+	dec a	;0 for slot 1, 1 for slot 2
+	di
+	call SD_ON
+	ld (#5800),a	;SD slot select
+	call GETWRK
+
+	push hl
+	push de
+	push bc
+	call InitSD
+	pop bc
+	pop de
+	pop hl
+	jr c,DO_DEVQ_RBI_NRDY	;Timeout: no card
+	jr nz,DO_DEVQ_RBI_NRDY
+
+	call ReadSD
+	call SD_OFF
+	ei
+	ret c	;A = Error code
+	xor a
+	ret
+
+DO_DEVQ_RBI_NRDY:
+	call SD_OFF
+	ei
+	ld a,:.NRDY
+	ret
 
 ;-----------------------------------------------------------------------------
 ;
@@ -1564,9 +1637,20 @@ ReadSD2:
 .loop:
 	;ld	b,2
 	ld	h,#40
+	ld	b,0		;Timeout counter, low
+	exx
+	ld	c,0		;Timeout counter, high
+	exx
 .wait:
 	cp	(hl)		;start data token ?
+	jr	z,.token
+	djnz	.wait
+	exx
+	dec	c
+	exx
 	jr	nz,.wait
+	jr	.error		;No data token (e.g. no card but data line stuck low)
+.token:
 
 	call	transfer
 	
@@ -1753,10 +1837,8 @@ Write1:
 	jr	nz,.exit	;response error
 	;ACMD22 can be used to find the number of well written write blocks
 
-.wait:
-	ld	a,(de)
-	cp	#ff
-	jr	nz,.wait
+	call	WaitBusy
+	ret	c		; Timeout
 
 	xor	a		; Read successfully
 	ret
@@ -1851,8 +1933,17 @@ SetBlockLen:
 TestCard:
 	call	SD_CMD
 	db	#40+16,0,0,2,0,#95
-	ret	nc
-	
+	jr	c,.reinit
+
+	; A card releases the data line after the response. If it's still
+	; low there's no card: an empty slot may read as 0 instead of #FF.
+	ld	a,(de)
+	inc	a
+	ret	z		; Cy=0 from SD_CMD
+	scf
+	ret
+
+.reinit:
 	call	InitSD
 	ret	c
 	jr	z,TestCard
@@ -2087,6 +2178,7 @@ TXT_INFO:
 		db	"MegaFlashROM SCC+ SD driver",13,10
 		VERSION_STRING %VER_MAIN,%VER_SEC
 		db	"(c) 2013 Manuel Pazos",13,10
+		db	"(c) 2026 Konamiman",13,10
 TXT_EMPTY:		
 		db	13,10,0
 
@@ -2107,6 +2199,8 @@ TXT_SDHC:
 		db	" SDHC",13,10,0
 TXT_SDXC:
 		db	" SDXC",13,10,0
+TXT_NOCARD:
+		db	" (empty)",13,10,0
 
 SDSLOT_1_S:
 		db	"SD card slot 1",0
