@@ -40,10 +40,12 @@ jobs:
         with:
           submodules: false
 
-      # The image provides the SDK and kernel base files; docker-build.sh runs
-      # build-all.sh inside it, which builds against every base-file variant
-      # the image ships, writing the ROMs to bin/ owned by the runner user.
-      - name: Build driver ROMs against every kernel base variant
+      # The image provides the SDK, the kernel base files and SDCC;
+      # docker-build.sh runs build-all.sh inside it, which builds against
+      # every base-file variant the image ships, writing the ROMs to bin/
+      # owned by the runner user. The default make target also builds the
+      # MFRFLASH.COM tool (once, it doesn't depend on the kernel base).
+      - name: Build driver ROMs against every kernel base variant, and the tools
         run: ./docker-build.sh --image "$NEXTOR_IMAGE" --variant all
 
       # Four ROMs (1-slot, 1-slot.Recovery, 2-slots, 2-slots.Recovery) for
@@ -65,8 +67,15 @@ jobs:
           [ "$total" -eq 48 ] || { echo "Expected 48 ROMs in bin/, found $total"; ls bin; exit 1; }
           echo "OK: $n ROMs present and non-empty"
 
-      - name: Upload ROMs
+      - name: Confirm the flashing tool was produced
+        run: |
+          [ -s bin/MFRFLASH.COM ] || { echo "Missing or empty: bin/MFRFLASH.COM"; ls bin; exit 1; }
+          echo "OK: bin/MFRFLASH.COM present and non-empty"
+
+      - name: Upload ROMs and tools
         uses: actions/upload-artifact@v4
         with:
           name: mfrsd-roms
-          path: bin/Nextor-*.MegaFlashSDSCC*.ROM
+          path: |
+            bin/Nextor-*.MegaFlashSDSCC*.ROM
+            bin/MFRFLASH.COM

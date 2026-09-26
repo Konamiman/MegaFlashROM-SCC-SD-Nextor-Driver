@@ -1,14 +1,16 @@
 #!/bin/sh
-# docker-build.sh - build the MegaFlashROM SCC+ SD driver ROMs using the Nextor dev
-# Docker image, with no local toolchain, SDK submodule or kernel base file
-# needed: the image supplies N80, mknexrom, the Nextor SDK and all twelve
-# kernel base-file variants, and presets NEXTOR_BASE / NEXTOR_SDK so plain
-# `make` inside it just works.
+# docker-build.sh - build the MegaFlashROM SCC+ SD driver ROMs (and the
+# MFRFLASH.COM tool) using the Nextor dev Docker image, with no local
+# toolchain, SDK submodule or kernel base file needed: the image supplies
+# N80, mknexrom, SDCC, the Nextor SDK and all twelve kernel base-file
+# variants, and presets NEXTOR_BASE / NEXTOR_SDK so plain `make` inside it
+# just works.
 #
 # Usage:
 #   ./docker-build.sh [--variant <suffix>] [--image <ref>] [make args...]
 #
-#   ./docker-build.sh                           # all ROMs, default kernel base
+#   ./docker-build.sh                           # all ROMs + MFRFLASH.COM, default kernel base
+#   ./docker-build.sh tools                     # just MFRFLASH.COM
 #   ./docker-build.sh --variant NO_UNDOC        # build against the NO_UNDOC base
 #   ./docker-build.sh --variant CTRL_INV
 #   ./docker-build.sh --variant NO_UNDOC.SHIFT_INV
