@@ -343,55 +343,6 @@ DO_DEVQ_GET_PARAMS_DEF:
 	ld (ix+11),a
 	ret
 
-	;--- Device query 8: read device sectors before initialization.
-	;
-	;    Nextor uses this at boot time to read its persistent storage file
-	;    before the driver has been initialized, so nothing must be printed.
-	;    The work area is in SLTWRK and is all zeros at this point: the card
-	;    is initialized here, and again later by the driver initialization.
-	;
-	;    Input:  C  = Device number (already validated)
-	;            B  = Number of sectors to read
-	;            HL = Destination address
-	;            DE = Address of the 4 byte sector number
-	;    Output: A  = Error code, as in READ_WRITE
-
-DO_DEVQ_READ_BEFORE_INIT:
-	ld a,c
-	cp 3
-	ld a,:.IDEVN	;The ROM disk is excluded from the persistent storage
-	ret z
-
-	ld a,c
-	dec a	;0 for slot 1, 1 for slot 2
-	di
-	call SD_ON
-	ld (#5800),a	;SD slot select
-	call GETWRK
-
-	push hl
-	push de
-	push bc
-	call InitSD
-	pop bc
-	pop de
-	pop hl
-	jr c,DO_DEVQ_RBI_NRDY	;Timeout: no card
-	jr nz,DO_DEVQ_RBI_NRDY
-
-	call ReadSD
-	call SD_OFF
-	ei
-	ret c	;A = Error code
-	xor a
-	ret
-
-DO_DEVQ_RBI_NRDY:
-	call SD_OFF
-	ei
-	ld a,:.NRDY
-	ret
-
 DO_DEVQ_GET_AVAILABILITY:
 	ld b,0
 	jr DO_DEVQ_GET_STATUS_AVAILABILITY
@@ -727,6 +678,59 @@ NEXTOR2_DEV_RW:
 	jr	c,.writeError	; Can't write in ROM
 
 	jp	RomDiskRead
+
+
+	;--- Device query 8: read device sectors before initialization.
+	;
+	;    Nextor uses this at boot time to read its persistent storage file
+	;    before the driver has been initialized, so nothing must be printed.
+	;    The work area is in SLTWRK and is all zeros at this point: the card
+	;    is initialized here, and again later by the driver initialization.
+	;
+	;    This must be above #6000 (like all the code that calls SD_ON),
+	;    since SD_ON replaces #4000-#5FFF with the SD control area.
+	;
+	;    Input:  C  = Device number (already validated)
+	;            B  = Number of sectors to read
+	;            HL = Destination address
+	;            DE = Address of the 4 byte sector number
+	;    Output: A  = Error code, as in READ_WRITE
+
+DO_DEVQ_READ_BEFORE_INIT:
+	ld a,c
+	cp 3
+	ld a,:.IDEVN	;The ROM disk is excluded from the persistent storage
+	ret z
+
+	ld a,c
+	dec a	;0 for slot 1, 1 for slot 2
+	di
+	call SD_ON
+	ld (#5800),a	;SD slot select
+	call GETWRK
+
+	push hl
+	push de
+	push bc
+	call InitSD
+	pop bc
+	pop de
+	pop hl
+	jr c,DO_DEVQ_RBI_NRDY	;Timeout: no card
+	jr nz,DO_DEVQ_RBI_NRDY
+
+	call ReadSD
+	call SD_OFF
+	ei
+	ret c	;A = Error code
+	xor a
+	ret
+
+DO_DEVQ_RBI_NRDY:
+	call SD_OFF
+	ei
+	ld a,:.NRDY
+	ret
 
 ;-----------------------------------------------------------------------------
 ;
