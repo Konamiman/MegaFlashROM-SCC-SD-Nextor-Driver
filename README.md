@@ -27,9 +27,28 @@ The 1-slot vs 2-slots distinction matches the hardware configuration of the cart
 | `Makefile`            | Build rules; see below.                                                                              |
 | `docker-build.sh`     | Wrapper that builds the ROMs in the Nextor dev Docker image (no local toolchain needed).             |
 | `build-all.sh`        | Builds the ROMs against every kernel base-file variant found in a directory, with the local toolchain. |
+| `tools/`              | `MFRFLASH.COM`, a tool to flash the ROMs from the MSX itself (C source and its own Makefile); see [The MFRFLASH tool](#the-mfrflash-tool). |
 | `external/Nextor`     | Git submodule pointing at the Nextor repo, sparse-checkout to the `sdk/` directory only.             |
 
 The ASCII8 bank-switching routine consumed by the cartridge mapper comes from the Nextor SDK (`asm/chgbnk/ascii8.asm`), so it isn't vendored in this repo.
+
+## The MFRFLASH tool
+
+`bin/MFRFLASH.COM` (built from `tools/mfrflash.c`) is an MSX-DOS 2 / Nextor command that flashes a ROM file into the Nextor area of a MegaFlashROM SCC+ SD cartridge, and it can do so **even when the cartridge is the DOS controller the computer booted from** (the original `OPFXSD` tool can't, since the kernel it runs on would disappear midway). Usage:
+
+```
+MFRFLASH <file> <slot>[-<subslot>]|0 [/f] [/s]
+```
+
+`<slot>-<subslot>` is the slot where the Nextor kernel of the cartridge lives (subslot 3 of the cartridge slot, e.g. `2-3` for a cartridge in slot 2), and `0` stands for the primary DOS controller slot, whatever it is. `/f` skips the check that the slot actually contains a MegaFlashROM SCC+ SD. `/s` skips all the confirmation prompts (see below).
+
+How it works: the entire file is first read and cached in RAM (the TPA, plus as many 16K mapped RAM segments as needed, from the primary mapper first and from any other mapper in the system afterwards) and, if that isn't enough, in the VRAM not used by the text screen (48K on machines with 64K of VRAM, 112K with 128K; MSX1 computers and non-text screen modes excluded). Once the file is cached the tool asks for confirmation (showing the actual slot to be flashed, also when `0` was specified); nothing has been written to the flash yet at that point. Only then, with interrupts disabled and without any further disk access, the flash is erased (only as many 64K blocks as the file needs, so a ROM disk installed after a 128K kernel survives the flashing of another 128K kernel) and programmed from the cache, verifying each block after writing it. One dot is printed per 1K read or flashed.
+
+If the flashed slot is a DOS controller in use (the primary one or any other one listed in the disk driver table) the program ends by asking you to reset the computer and hangs there, since the DOS kernel it runs under is gone; otherwise it just returns to DOS. Flash the regular `.ROM` variants, not the `.Recovery.ROM` ones (those are for the recovery menu of the cartridge and carry an extra header): the tool asks for confirmation before flashing a file that doesn't start with the `AB` ROM signature (with `/s` it just prints a warning). The file can't be bigger than the Nextor area of the flash (1024K).
+
+The slot check requires the target to be subslot 3 of an expanded slot (the other subslots of the cartridge hold the recovery ROM, the game area and the RAM, and would be damaged), reads the flash chip ID (a Micron/Numonyx M29W640 with manufacturer code 20h and device code 7Eh, FDh or 5Bh) and verifies that the slot behaves as an ASCII8 mapper, which is how the Nextor area of the cartridge looks like. The mapper part of the check compares the contents of the first two 8K banks, so it fails on a cartridge whose Nextor area has been erased: use `/f` in that case, and only in that case, since with `/f` the tool writes wherever it is pointed at. Before flashing, the tool writes the default value (03h) to the configuration register of the cartridge (in subslot 1 of the same slot) to make sure flash writes are enabled, as `OPFXSD` does.
+
+The tool needs MSX-DOS 2 or Nextor (it relies on the mapper support routines) and any MSX; the VRAM cache is only used on MSX2 and higher.
 
 ## Development environment
 
@@ -39,6 +58,7 @@ The quickest path needs **nothing but Docker**: see [Building with the Nextor de
 - **`mknexrom`** on your `PATH`, or pointed at via the `MKNEXROM` make variable. The source lives in the Nextor repository under `buildtools/sources/mknexrom.c`.
 - A POSIX **`make`** and `cat`.
 - A Nextor kernel base file and the Nextor SDK (the `external/Nextor` submodule, set up with `make setup`).
+- For `MFRFLASH.COM` only: [**SDCC**](https://sdcc.sourceforge.net) (`sdcc` and `sdasz80`) and **`objcopy`** (GNU binutils), on your `PATH` or pointed at via the `SDCC`, `SDASZ80` and `OBJCOPY` make variables. `make roms` builds just the ROMs if you don't have them.
 
 ## Cloning the repository
 
@@ -90,10 +110,11 @@ There are two ways to build: with the **Nextor dev Docker image** (no local tool
 
 ### Building with the Nextor dev Docker image
 
-The [`nextor-dev`](https://github.com/Konamiman/Nextor/pkgs/container/nextor-dev) image bundles `N80`, `mknexrom`, the Nextor SDK and both kernel base-file variants, and presets `NEXTOR_BASE` / `NEXTOR_SDK`, so a build needs nothing else on your machine - not even the `external/Nextor` submodule. The `docker-build.sh` wrapper runs the build in a container, mounting this repository and writing the ROMs into `bin/` owned by you (not root):
+The [`nextor-dev`](https://github.com/Konamiman/Nextor/pkgs/container/nextor-dev) image bundles `N80`, `mknexrom`, SDCC, the Nextor SDK and both kernel base-file variants, and presets `NEXTOR_BASE` / `NEXTOR_SDK`, so a build needs nothing else on your machine - not even the `external/Nextor` submodule. The `docker-build.sh` wrapper runs the build in a container, mounting this repository and writing the ROMs (and `MFRFLASH.COM`) into `bin/` owned by you (not root):
 
 ```sh
-./docker-build.sh                       # all four ROMs, default kernel base
+./docker-build.sh                       # all four ROMs and MFRFLASH.COM, default kernel base
+./docker-build.sh tools                 # just MFRFLASH.COM
 ./docker-build.sh --variant NO_UNDOC    # build against the NO_UNDOC kernel base
 ./docker-build.sh --variant all         # build against every base variant
 ./docker-build.sh clean                 # any extra args are passed to make
@@ -111,7 +132,7 @@ The build needs a Nextor kernel base file, supplied via `NEXTOR_BASE`:
 NEXTOR_BASE=/path/to/Nextor-3.0.0.base.dat make
 ```
 
-That produces all four ROM variants in the `bin/` directory.
+That produces all four ROM variants, plus `MFRFLASH.COM`, in the `bin/` directory. `make roms` builds only the ROMs and `make tools` only the tool (the latter needs SDCC but no kernel base file; it can also be built standalone with `make -C tools`).
 
 For an undoc-instruction-free build (compatible with Z180-based MSX machines), just point `NEXTOR_BASE` at an undoc-free kernel base:
 
@@ -177,13 +198,17 @@ The other three variants are slight modifications of the same recipe:
 | `N80`                       | Path to the Nestor80 assembler.                                      | `N80` (from `PATH`)      |
 | `MKNEXROM`                  | Path to the `mknexrom` tool.                                         | `mknexrom` (from `PATH`) |
 | `NO_UNDOC_CPU_INSTRUCTIONS` | If non-empty (e.g. `=1`), assemble the driver without undocumented opcodes. | _inferred: `1` if the `NEXTOR_BASE` filename's variant suffix contains `NO_UNDOC`, unset otherwise_ |
+| `SDCC`, `SDASZ80`, `OBJCOPY` | Paths to the SDCC compiler and assembler and to GNU `objcopy`, used to build `MFRFLASH.COM` only. | `sdcc`, `sdasz80`, `objcopy` (from `PATH`) |
 
-Cleanup targets:
+Build and cleanup targets:
 
 | Target           | Effect                                                                                                          |
 | ---------------- | --------------------------------------------------------------------------------------------------------------- |
-| `make clean`     | Removes `tmp/` (intermediate `.bin` files and helper artifacts). `bin/` and the shippable ROMs in it are kept.  |
-| `make clean-bin` | Removes `bin/` (the shippable ROMs).                                                                            |
+| `make` / `make all` | Builds the four ROMs and `MFRFLASH.COM`.                                                                     |
+| `make roms`      | Builds only the four ROMs.                                                                                      |
+| `make tools`     | Builds only `MFRFLASH.COM` (no `NEXTOR_BASE` needed).                                                           |
+| `make clean`     | Removes `tmp/` (intermediate `.bin` files, the SDCC output and helper artifacts). `bin/` and the shippable files in it are kept. |
+| `make clean-bin` | Removes `bin/` (the shippable ROMs and tool).                                                                   |
 | `make distclean` | Removes both `tmp/` and `bin/`.                                                                                 |
 
 ## License
