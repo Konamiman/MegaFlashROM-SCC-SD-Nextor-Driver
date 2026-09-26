@@ -476,28 +476,31 @@ NEXTOR2_DRV_INIT:
 		pop	af
 		;*
 
-		jr	c,.notCard
-		jr	nz,.notCard
+		ld	hl,TXT_NOCARD
+		jr	c,.showCard
+		jr	nz,.showCard
 
-		ld	b,e		; Card type
+		ld	a,e		; Card type
+		rlca
+		ld	hl,IDX_TYPE
+		ADD_HL_A
+		ld	a,(hl)
+		inc	hl
+		ld	h,(hl)
+		ld	l,a
+.showCard:
+		push	hl		; Card type text
 		ld	de,TXT_INIT
 		call	PRINT		; Card init text
-	
+
 		ld	a,c			; SD slot
 		add	a,'1'
 		call	DO_CHPUT
 		ld	a,':'
 		call	DO_CHPUT
-		
-		ld	a,b		; Card type
-		rlca
-		ld	hl,IDX_TYPE
-		ADD_HL_A
-		ld	e,(hl)
-		inc	hl
-		ld	d,(hl)
+
+		pop	de
 		call	PRINT		; Shows card type
-.notCard:
 		pop	bc
 		djnz	.loop
 		
@@ -1634,9 +1637,20 @@ ReadSD2:
 .loop:
 	;ld	b,2
 	ld	h,#40
+	ld	b,0		;Timeout counter, low
+	exx
+	ld	c,0		;Timeout counter, high
+	exx
 .wait:
 	cp	(hl)		;start data token ?
+	jr	z,.token
+	djnz	.wait
+	exx
+	dec	c
+	exx
 	jr	nz,.wait
+	jr	.error		;No data token (e.g. no card but data line stuck low)
+.token:
 
 	call	transfer
 	
@@ -1823,10 +1837,8 @@ Write1:
 	jr	nz,.exit	;response error
 	;ACMD22 can be used to find the number of well written write blocks
 
-.wait:
-	ld	a,(de)
-	cp	#ff
-	jr	nz,.wait
+	call	WaitBusy
+	ret	c		; Timeout
 
 	xor	a		; Read successfully
 	ret
@@ -1921,8 +1933,17 @@ SetBlockLen:
 TestCard:
 	call	SD_CMD
 	db	#40+16,0,0,2,0,#95
-	ret	nc
-	
+	jr	c,.reinit
+
+	; A card releases the data line after the response. If it's still
+	; low there's no card: an empty slot may read as 0 instead of #FF.
+	ld	a,(de)
+	inc	a
+	ret	z		; Cy=0 from SD_CMD
+	scf
+	ret
+
+.reinit:
 	call	InitSD
 	ret	c
 	jr	z,TestCard
@@ -2157,6 +2178,7 @@ TXT_INFO:
 		db	"MegaFlashROM SCC+ SD driver",13,10
 		VERSION_STRING %VER_MAIN,%VER_SEC
 		db	"(c) 2013 Manuel Pazos",13,10
+		db	"(c) 2026 Konamiman",13,10
 TXT_EMPTY:		
 		db	13,10,0
 
@@ -2177,6 +2199,8 @@ TXT_SDHC:
 		db	" SDHC",13,10,0
 TXT_SDXC:
 		db	" SDXC",13,10,0
+TXT_NOCARD:
+		db	" (empty)",13,10,0
 
 SDSLOT_1_S:
 		db	"SD card slot 1",0
