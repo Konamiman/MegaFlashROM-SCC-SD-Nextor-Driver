@@ -7,6 +7,10 @@
 ; 26/04/2025 - v1.4 Added SDXC cards identification
 ; 30/05/2025 - v1.5 Fixed SD card type identification
 ; 01/10/2026 - v1.6 Implement the READ_BEFORE_INIT query
+;
+; Define the OCM symbol to build the variant for the MegaSD controller of
+; the OCM (1chipMSX) and derived FPGA machines: one SD card slot and no
+; ROM disk. NUM_SLOTS must not be defined in that case.
 ;-----------------------------------------------------------------------------
 
 	.RELAB
@@ -40,6 +44,11 @@ ADD_DE_A macro
 WORK_AREA_SIZE	equ	0	; RAM needed by the driver
 
 	;The NUM_SLOTS constant (SD card slots available) must be defined externally
+	;(except for the OCM variant, which has always one slot)
+
+	ifdef OCM
+NUM_SLOTS	equ	1
+	endif
 
 	ifndef NUM_SLOTS
 	.fatal NUM_SLOTS constant required with a value of 1 or 2
@@ -144,7 +153,11 @@ DRV_START:
 ; Driver name
 
 DRV_NAME:
+	ifdef OCM
+	db	"OCM-MegaSDHC",0
+	else
 	db	"MegaFlashROM SCC+ SD",0
+	endif
 
 
 
@@ -215,7 +228,11 @@ DO_DRVQ_INIT:
 	ret
 
 DO_DRVQ_GET_MAX_DEVICE:
+	ifdef OCM
+	ld b,1
+	else
 	ld b,3
+	endif
 	xor a
 	ret
 
@@ -239,7 +256,11 @@ DEVICE_QUERY:
 
 	or a
 	jr z,INVALID_DEVICE
+	ifdef OCM
+	cp 1+1	;No ROM disk in the OCM
+	else
 	cp 3+1
+	endif
 	jr nc,INVALID_DEVICE
 
 	if NUM_SLOTS eq 1
@@ -2175,9 +2196,16 @@ db	"Version &v_main&.&v_sub&",13,10
 endm
 
 TXT_INFO:
+		ifdef OCM
+		db	"OCM-MegaSDHC driver",13,10
+		VERSION_STRING %VER_MAIN,%VER_SEC
+		db	"(c) 2013 Manuel Pazos",13,10
+		db	"(c) 2021 KdL",13,10
+		else
 		db	"MegaFlashROM SCC+ SD driver",13,10
 		VERSION_STRING %VER_MAIN,%VER_SEC
 		db	"(c) 2013 Manuel Pazos",13,10
+		endif
 		db	"(c) 2026 Konamiman",13,10
 TXT_EMPTY:		
 		db	13,10,0

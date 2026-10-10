@@ -17,6 +17,16 @@ Four variants are built by default:
 
 The 1-slot vs 2-slots distinction matches the hardware configuration of the cartridge. The Recovery variants are intended to be saved on the SD card and loaded from the cartridge's recovery menu; the regular variants are flashed directly to the cartridge ROM.
 
+### OCM variant
+
+The same driver also handles the MegaSD SD card controller of the OCM (1chipMSX) and derived FPGA machines (MSX++, SX|2, ZEMMIX...), which is register-compatible with the cartridge (SD control area selected by writing 40h to 6000h, data port at 4000h-57FFh, mode register at 5800h); the Nextor 2 OCM driver was in fact this same driver built for one slot. The `ocm` target, not included in `all`, builds it:
+
+| Output                    | Notes                                                                 |
+| ------------------------- | --------------------------------------------------------------------- |
+| `Nextor-<ver>.OCM.ROM`    | One SD card slot, no ROM disk. Device name `OCM-MegaSDHC`.            |
+
+It's selected by defining the `OCM` symbol instead of `NUM_SLOTS` when assembling the driver. The resulting 128K ROM goes in the first 128K of the machine's `OCM-BIOS.DAT` (or of the EPBIOS image), where the Nextor kernel lives.
+
 ## Repository contents
 
 | File                  | Purpose                                                                                              |
@@ -206,6 +216,7 @@ Build and cleanup targets:
 | ---------------- | --------------------------------------------------------------------------------------------------------------- |
 | `make` / `make all` | Builds the four ROMs and `MFRFLASH.COM`.                                                                     |
 | `make roms`      | Builds only the four ROMs.                                                                                      |
+| `make ocm`       | Builds only the OCM ROM (see [OCM variant](#ocm-variant)).                                                      |
 | `make tools`     | Builds only `MFRFLASH.COM` (no `NEXTOR_BASE` needed).                                                           |
 | `make clean`     | Removes `tmp/` (intermediate `.bin` files, the SDCC output and helper artifacts). `bin/` and the shippable files in it are kept. |
 | `make clean-bin` | Removes `bin/` (the shippable ROMs and tool).                                                                   |

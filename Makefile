@@ -8,6 +8,11 @@
 #   * bin/Nextor-<ver>.MegaFlashSDSCC.2-slots.ROM            - 2-slots variant
 #   * bin/Nextor-<ver>.MegaFlashSDSCC.2-slots.Recovery.ROM   - 2-slots, prefixed with the recovery header
 #
+# The `ocm` target (not included in `all`) builds the variant for the MegaSD
+# controller of the OCM (1chipMSX) and derived FPGA machines:
+#
+#   * bin/Nextor-<ver>.OCM.ROM                               - 1 SD slot, no ROM disk
+#
 # It also builds the flashing tool (`make tools`, included in `all`):
 #
 #   * bin/MFRFLASH.COM  - cached flash ROM loader, see tools/mfrflash.c
@@ -120,6 +125,7 @@ ROM_1SLOT           := $(BIN)/$(_DRIVER_PREFIX).1-slot$(_VARIANT).ROM
 ROM_1SLOT_RECOVERY  := $(BIN)/$(_DRIVER_PREFIX).1-slot.Recovery$(_VARIANT).ROM
 ROM_2SLOTS          := $(BIN)/$(_DRIVER_PREFIX).2-slots$(_VARIANT).ROM
 ROM_2SLOTS_RECOVERY := $(BIN)/$(_DRIVER_PREFIX).2-slots.Recovery$(_VARIANT).ROM
+ROM_OCM             := $(BIN)/Nextor-$(NEXTOR_KERNEL_VERSION).OCM$(_VARIANT).ROM
 
 
 ### Assembly flags ###########################################################
@@ -157,10 +163,12 @@ $(_BUILD_STAMP): FORCE | $(TMP)
 # file, so without this `make` with no arguments would build only the stamp.
 .DEFAULT_GOAL := all
 
-.PHONY: all roms tools clean clean-bin distclean setup FORCE
+.PHONY: all roms ocm tools clean clean-bin distclean setup FORCE
 all: roms tools
 
 roms: $(ROM_1SLOT) $(ROM_1SLOT_RECOVERY) $(ROM_2SLOTS) $(ROM_2SLOTS_RECOVERY)
+
+ocm: $(ROM_OCM)
 
 # The flashing tool has its own Makefile (it needs SDCC rather than N80);
 # it is handed absolute paths since it runs from its own directory.
@@ -187,6 +195,9 @@ $(TMP)/driver.1slot.bin: driver.asm romdisk.asm $(_BUILD_STAMP) | $(TMP)
 $(TMP)/driver.2slots.bin: driver.asm romdisk.asm $(_BUILD_STAMP) | $(TMP)
 	$(N80) driver.asm $(TMP)/driver.2slots.bin $(N80_FLAGS) $(_DEFINES_NO_UNDOC) --define-symbols NUM_SLOTS=2
 
+$(TMP)/driver.ocm.bin: driver.asm romdisk.asm $(_BUILD_STAMP) | $(TMP)
+	$(N80) driver.asm $(TMP)/driver.ocm.bin $(N80_FLAGS) $(_DEFINES_NO_UNDOC) --define-symbols OCM
+
 # The bank-switching routine for the ASCII8 mapper is the standard one
 # shipped by the Nextor SDK.
 
@@ -206,6 +217,9 @@ $(ROM_1SLOT): $(TMP)/driver.1slot.bin $(TMP)/chgbnk.bin | $(BIN)
 
 $(ROM_2SLOTS): $(TMP)/driver.2slots.bin $(TMP)/chgbnk.bin | $(BIN)
 	$(MKNEXROM) $(NEXTOR_BASE) $@ /d:$(TMP)/driver.2slots.bin /m:$(TMP)/chgbnk.bin
+
+$(ROM_OCM): $(TMP)/driver.ocm.bin $(TMP)/chgbnk.bin | $(BIN)
+	$(MKNEXROM) $(NEXTOR_BASE) $@ /d:$(TMP)/driver.ocm.bin /m:$(TMP)/chgbnk.bin
 
 # Recovery ROMs are the corresponding regular ROM with the recovery
 # header concatenated in front.

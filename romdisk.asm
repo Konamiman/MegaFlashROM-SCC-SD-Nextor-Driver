@@ -19,6 +19,13 @@ UPB_NDIR	equ 11h
 ; Out: Z = Available, NZ = Not available
 ;-----------------------------------------------------------------------------
 RomDiskCheck:
+		ifdef OCM
+		; The OCM has no ROM disk, and selecting DSK_BANK would map
+		; unrelated ESE-RAM contents in #4000-#5FFF
+		or	1		; NZ = Not available
+		ret
+		endif
+
 		di
 		ld	a,DSK_BANK
 		ld	(BANK4),a
