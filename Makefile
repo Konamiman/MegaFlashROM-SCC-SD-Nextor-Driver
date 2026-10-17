@@ -111,7 +111,7 @@ N80_FLAGS := --no-string-escapes --no-show-banner --verbosity 0 \
 
 ### Default target ###########################################################
 
-.PHONY: all roms tools clean clean-bin distclean setup
+.PHONY: all roms tools clean clean-bin distclean setup FORCE
 all: roms tools
 
 roms: $(ROM_1SLOT) $(ROM_1SLOT_RECOVERY) $(ROM_2SLOTS) $(ROM_2SLOTS_RECOVERY)
@@ -120,6 +120,8 @@ roms: $(ROM_1SLOT) $(ROM_1SLOT_RECOVERY) $(ROM_2SLOTS) $(ROM_2SLOTS_RECOVERY)
 # it is handed absolute paths since it runs from its own directory.
 tools:
 	$(MAKE) -C tools NEXTOR_SDK=$(abspath $(NEXTOR_SDK)) BIN=$(abspath $(BIN)) TMP=$(abspath $(TMP))/tools
+
+FORCE:
 
 # Order-only prereqs for outputs that live in the build directories:
 # ensure the directory exists without making its mtime affect rebuild
@@ -151,12 +153,32 @@ $(TMP)/recovery_header.bin: recovery_header.asm | $(TMP)
 	$(N80) recovery_header.asm $(TMP)/ $(N80_FLAGS)
 
 
+### Kernel base tracking #####################################################
+
+# The ROMs depend on the kernel base file, but make only rebuilds them when
+# the file is newer than the ROMs: pointing NEXTOR_BASE at a different, older
+# file (e.g. one from another kernel checkout) would silently keep the ROMs
+# built from the previous base. So the base file path is also recorded in a
+# stamp file that the ROMs depend on. There's one stamp per variant suffix
+# (the ROMs of each variant have their own names), so that build-all.sh going
+# through the bases of all the variants doesn't invalidate the ROMs of the
+# other variants every time.
+_BASE_STAMP := $(TMP)/.kernel-base$(_VARIANT)
+_BASE_ID    := $(abspath $(NEXTOR_BASE))
+
+# Rewrite the stamp only when the path actually changes, so that its mtime
+# (and hence the rebuild) is triggered only on a real change. FORCE makes the
+# recipe run every build to perform the check.
+$(_BASE_STAMP): FORCE | $(TMP)
+	@printf '%s\n' '$(_BASE_ID)' | cmp -s - $@ || printf '%s\n' '$(_BASE_ID)' > $@
+
+
 ### ROM combination via mknexrom (final outputs) #############################
 
-$(ROM_1SLOT): $(TMP)/driver.1slot.bin $(TMP)/chgbnk.bin | $(BIN)
+$(ROM_1SLOT): $(TMP)/driver.1slot.bin $(TMP)/chgbnk.bin $(NEXTOR_BASE) $(_BASE_STAMP) | $(BIN)
 	$(MKNEXROM) $(NEXTOR_BASE) $@ /d:$(TMP)/driver.1slot.bin /m:$(TMP)/chgbnk.bin
 
-$(ROM_2SLOTS): $(TMP)/driver.2slots.bin $(TMP)/chgbnk.bin | $(BIN)
+$(ROM_2SLOTS): $(TMP)/driver.2slots.bin $(TMP)/chgbnk.bin $(NEXTOR_BASE) $(_BASE_STAMP) | $(BIN)
 	$(MKNEXROM) $(NEXTOR_BASE) $@ /d:$(TMP)/driver.2slots.bin /m:$(TMP)/chgbnk.bin
 
 # Recovery ROMs are the corresponding regular ROM with the recovery
