@@ -11,8 +11,6 @@
 
 	.RELAB
 
-	INCLUDE asm/macros/undoc.inc
-
 ;---------------------------------------------------------------------------
 ; MACROS
 ;---------------------------------------------------------------------------
@@ -815,7 +813,8 @@ NEXTOR2_DEV_INFO:
 		call	GetCID
 		pop	de		; DE = Buffer in RAM, HL = SD registers
 		pop	bc
-		pop iy	;IYh =　buffer length
+		pop iy	;IYh = buffer length (read back as A via push iy + pop af,
+			;to avoid the undocumented ld r,iyh instructions)
 		jp	c,.DEV_INFO_BAD_DEVICE_SDOFF
 		
 		djnz	.DEV_INFO2
@@ -827,7 +826,9 @@ NEXTOR2_DEV_INFO:
 		ld	b,15 + 2
 		call	SkipBytes
 		call	GetManufacName
-		ld_	b,iyh
+		push	iy
+		pop	af	;A = buffer length
+		ld	b,a
 		call OUTPUT_STRING		; Copy manufacturer name to buffer
 		pop	bc	;B = ID
 		or a
@@ -836,7 +837,8 @@ NEXTOR2_DEV_INFO:
 		; Add [id] to the manufacturer name
 		; if the buffer was at least 20 bytes long
 
-		ld_ a,iyh
+		push iy
+		pop af	;A = buffer length
 		cp 20
 		jr c,.DEV_END_NOERR
 		ld a," "
@@ -861,12 +863,15 @@ NEXTOR2_DEV_INFO:
 		
 		; 2: Device name string
 
-		ld_ a,iyh
+		push iy
+		pop af	;A = buffer length
 		cp 6+1	; Enough space for the entire string (4 bytes + zero byte)?
 		ld c,5  ; C = Length to copy
 		ld a,RESULT_OK  ; A = Error to return
 		jr nc,.DEV_INFO2_OKLEN
-		ld_ c,iyh
+		push iy
+		pop af	;A = buffer length
+		ld c,a
 		dec c	;Copy one byte less to make size for the zero byte
 		ld a,RESULT_TRUNCATED_STRING
 .DEV_INFO2_OKLEN:
@@ -890,7 +895,8 @@ NEXTOR2_DEV_INFO:
 		
 		; 3: Serial number string
 
-		ld_ a,iyh
+		push iy
+		pop af	;A = buffer length
 		cp 5	;Enough buffer (4 hex bytes + zero)?
 		ld a,RESULT_NOT_IMPLEMENTED
 		jp c,SD_OFF_EI

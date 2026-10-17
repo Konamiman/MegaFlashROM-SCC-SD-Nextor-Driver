@@ -21,8 +21,7 @@
 #   kernel_base[<suffix>].dat          as shipped in the Nextor dev image
 #
 # <suffix> is empty for the default base and .NO_UNDOC for the undoc-free one;
-# it ends up in the ROM names, and for the NO_UNDOC base makes the Makefile
-# assemble the driver undoc-free to match, exactly as with a plain `make`.
+# it ends up in the ROM names, exactly as with a plain `make`.
 #
 # If the directory holds base files for more than one kernel version (e.g.
 # leftovers from an earlier build), the ones for the version the SDK reports
@@ -147,24 +146,20 @@ fi
 
 ### Order the variants ########################################################
 
-# The Makefile assembles the driver differently for the undoc-free (*NO_UNDOC*)
-# bases, and its build-flag stamp reassembles it whenever that changes;
-# building all the regular bases first and all the undoc-free ones last keeps
-# that to a single reassembly instead of one per variant. Within each group
-# the default base (if present) goes first, for readability.
-regular=; undoc=
+# The default base (if present) goes first, for readability; the driver is
+# assembled the same way for every base, so the order doesn't matter otherwise.
+variants=
 while read -r pair_family suffix; do
 	[ "$pair_family" = "$family" ] || continue
 	case $suffix in
-		default)    regular="$suffix $regular" ;;
-		*NO_UNDOC*) undoc="$undoc $suffix" ;;
-		*)          regular="$regular $suffix" ;;
+		default) variants="$suffix $variants" ;;
+		*)       variants="$variants $suffix" ;;
 	esac
 done <<EOF
 $pairs
 EOF
 # shellcheck disable=SC2086
-variants=$(echo $regular $undoc)  # (unquoted on purpose: normalizes the spacing)
+variants=$(echo $variants)  # (unquoted on purpose: normalizes the spacing)
 
 
 ### Build ####################################################################

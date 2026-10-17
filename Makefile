@@ -55,15 +55,6 @@ NEXTOR_SDK ?= external/Nextor/sdk
 N80      ?= N80
 MKNEXROM ?= mknexrom
 
-# NO_UNDOC_CPU_INSTRUCTIONS: when non-empty (e.g. =1) the driver is assembled
-# with undocumented Z80 opcodes (those operating on ixh/ixl/iyh/iyl) replaced
-# with documented equivalents, for compatibility with Z180-based MSX machines.
-# It is inferred from the NEXTOR_BASE filename (see "Build flag inference"
-# below): set when the base file's variant suffix contains NO_UNDOC, unset
-# otherwise, so the driver always matches the kernel it is combined with. An
-# explicit value (environment or command line, even an empty one) overrides
-# the inference.
-
 
 ### Output directories #######################################################
 
@@ -100,18 +91,6 @@ else
 _VARIANT :=
 endif
 
-### Build flag inference #####################################################
-
-# The undoc-free kernel bases carry NO_UNDOC in their variant suffix, so unless
-# the flag was given explicitly (`origin` is 'undefined' only when it was not
-# set anywhere, and a deliberate empty value counts as set), derive it from
-# the suffix. A base file with a non-standard name yields no suffix, hence no
-# inference: set the flag by hand in that case.
-ifeq ($(origin NO_UNDOC_CPU_INSTRUCTIONS),undefined)
-NO_UNDOC_CPU_INSTRUCTIONS := $(if $(findstring NO_UNDOC,$(_VARIANT)),1,)
-endif
-
-
 ### ROM names ################################################################
 
 _DRIVER_PREFIX := Nextor-$(NEXTOR_KERNEL_VERSION).MegaFlashSDSCC
@@ -129,35 +108,10 @@ N80_FLAGS := --no-string-escapes --no-show-banner --verbosity 0 \
              --output-file-case lower \
              --include-directory $(NEXTOR_SDK)
 
-_DEFINES_NO_UNDOC := $(if $(NO_UNDOC_CPU_INSTRUCTIONS),--define-symbols NO_UNDOC_CPU_INSTRUCTIONS)
-
-
-### Build-flag tracking ######################################################
-
-# The NO_UNDOC setting changes how the driver is assembled but appears in no
-# source file, so make can't see it change between runs. Record it in a stamp
-# file that the intermediate .bin targets depend on: switching
-# NO_UNDOC_CPU_INSTRUCTIONS then forces a reassembly instead of silently
-# combining a mismatched (e.g. non-undoc) driver with a .NO_UNDOC kernel base.
-# NUM_SLOTS doesn't need tracking: the 1-slot and 2-slots builds already go to
-# distinct filenames, so there is no stale-reuse hazard for them.
-_BUILD_ID    := undoc=$(if $(NO_UNDOC_CPU_INSTRUCTIONS),1,0)
-_BUILD_STAMP := $(TMP)/.build-id
-
-# Rewrite the stamp only when the id actually changes, so its mtime (and hence
-# the rebuild) is triggered only on a real flag change. FORCE makes the recipe
-# run every build to perform the check.
-$(_BUILD_STAMP): FORCE | $(TMP)
-	@printf '%s\n' '$(_BUILD_ID)' | cmp -s - $@ || printf '%s\n' '$(_BUILD_ID)' > $@
-
 
 ### Default target ###########################################################
 
-# Set explicitly: the build-flag stamp rule above is the first target in the
-# file, so without this `make` with no arguments would build only the stamp.
-.DEFAULT_GOAL := all
-
-.PHONY: all roms tools clean clean-bin distclean setup FORCE
+.PHONY: all roms tools clean clean-bin distclean setup
 all: roms tools
 
 roms: $(ROM_1SLOT) $(ROM_1SLOT_RECOVERY) $(ROM_2SLOTS) $(ROM_2SLOTS_RECOVERY)
@@ -166,8 +120,6 @@ roms: $(ROM_1SLOT) $(ROM_1SLOT_RECOVERY) $(ROM_2SLOTS) $(ROM_2SLOTS_RECOVERY)
 # it is handed absolute paths since it runs from its own directory.
 tools:
 	$(MAKE) -C tools NEXTOR_SDK=$(abspath $(NEXTOR_SDK)) BIN=$(abspath $(BIN)) TMP=$(abspath $(TMP))/tools
-
-FORCE:
 
 # Order-only prereqs for outputs that live in the build directories:
 # ensure the directory exists without making its mtime affect rebuild
@@ -181,22 +133,22 @@ $(BIN) $(TMP):
 # `driver.asm` (which also includes `romdisk.asm`) is assembled twice
 # with different NUM_SLOTS to produce the 1-slot and 2-slots variants.
 
-$(TMP)/driver.1slot.bin: driver.asm romdisk.asm $(_BUILD_STAMP) | $(TMP)
-	$(N80) driver.asm $(TMP)/driver.1slot.bin $(N80_FLAGS) $(_DEFINES_NO_UNDOC) --define-symbols NUM_SLOTS=1
+$(TMP)/driver.1slot.bin: driver.asm romdisk.asm | $(TMP)
+	$(N80) driver.asm $(TMP)/driver.1slot.bin $(N80_FLAGS) --define-symbols NUM_SLOTS=1
 
-$(TMP)/driver.2slots.bin: driver.asm romdisk.asm $(_BUILD_STAMP) | $(TMP)
-	$(N80) driver.asm $(TMP)/driver.2slots.bin $(N80_FLAGS) $(_DEFINES_NO_UNDOC) --define-symbols NUM_SLOTS=2
+$(TMP)/driver.2slots.bin: driver.asm romdisk.asm | $(TMP)
+	$(N80) driver.asm $(TMP)/driver.2slots.bin $(N80_FLAGS) --define-symbols NUM_SLOTS=2
 
 # The bank-switching routine for the ASCII8 mapper is the standard one
 # shipped by the Nextor SDK.
 
-$(TMP)/chgbnk.bin: $(NEXTOR_SDK)/asm/chgbnk/ascii8.asm $(_BUILD_STAMP) | $(TMP)
-	$(N80) $(NEXTOR_SDK)/asm/chgbnk/ascii8.asm $(TMP)/chgbnk.bin $(N80_FLAGS) $(_DEFINES_NO_UNDOC)
+$(TMP)/chgbnk.bin: $(NEXTOR_SDK)/asm/chgbnk/ascii8.asm | $(TMP)
+	$(N80) $(NEXTOR_SDK)/asm/chgbnk/ascii8.asm $(TMP)/chgbnk.bin $(N80_FLAGS)
 
 # 512-byte header prepended to the Recovery variants.
 
-$(TMP)/recovery_header.bin: recovery_header.asm $(_BUILD_STAMP) | $(TMP)
-	$(N80) recovery_header.asm $(TMP)/ $(N80_FLAGS) $(_DEFINES_NO_UNDOC)
+$(TMP)/recovery_header.bin: recovery_header.asm | $(TMP)
+	$(N80) recovery_header.asm $(TMP)/ $(N80_FLAGS)
 
 
 ### ROM combination via mknexrom (final outputs) #############################
