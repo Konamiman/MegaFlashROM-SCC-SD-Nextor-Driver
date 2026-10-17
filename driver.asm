@@ -7,6 +7,7 @@
 ; 26/04/2025 - v1.4 Added SDXC cards identification
 ; 30/05/2025 - v1.5 Fixed SD card type identification
 ; 01/10/2026 - v1.6 Implement the READ_BEFORE_INIT query
+; 01/11/2027 - v1.7 Make ROM disk have device number 1 again
 ;-----------------------------------------------------------------------------
 
 	.RELAB
@@ -87,7 +88,7 @@ MUL_DAT_TKN_END	equ	#FD
 
 ;Driver version
 VER_MAIN	equ	1
-VER_SEC		equ	6
+VER_SEC		equ	7
 VER_REV		equ	0
 
 
