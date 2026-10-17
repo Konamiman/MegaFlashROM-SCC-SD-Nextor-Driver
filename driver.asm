@@ -47,6 +47,12 @@ WORK_AREA_SIZE	equ	0	; RAM needed by the driver
 	endif
 	endif
 
+; Device numbers
+DEV_ROM_DISK	equ	1	; ROM disk
+DEV_SD_SLOT_1	equ	2	; SD slot 1
+DEV_SD_SLOT_2	equ	3	; SD slot 2 (2 slots variant only)
+DEV_MAX		equ	DEV_SD_SLOT_1 + NUM_SLOTS - 1
+
 ; Work area offsets
 STATUS		equ	0	; Offset in work area to status byte
 
@@ -102,6 +108,11 @@ VER_REV		equ	0
 	module DEVICE_QUERY
 	INCLUDE asm/constants/driver_device_queries.inc
 	endmod
+
+; Flags returned by the GET_PARAMS query for the ROM disk: fixed and read only,
+; and not to be used by Nextor for its persistent storage
+; (it's not the device the user boots from)
+ROM_DISK_PARAM_FLAGS	equ	(1 shl DEVICE_QUERY.PARAMF_READ_ONLY) or (1 shl DEVICE_QUERY.PARAMF_NO_PSTOR)
 
 	INCLUDE asm/constants/rom_bank_header.inc
 
@@ -213,7 +224,7 @@ DO_DRVQ_INIT:
 	ret
 
 DO_DRVQ_GET_MAX_DEVICE:
-	ld b,3
+	ld b,DEV_MAX
 	xor a
 	ret
 
@@ -237,14 +248,9 @@ DEVICE_QUERY:
 
 	or a
 	jr z,INVALID_DEVICE
-	cp 3+1
+	cp DEV_MAX+1
 	jr nc,INVALID_DEVICE
 
-	if NUM_SLOTS eq 1
-	cp 2
-	jr z,INVALID_DEVICE
-	endif
-	
 	pop af
 	dec a
 	jr z,DO_DEVQ_GET_STRING
@@ -278,24 +284,16 @@ DO_DEVQ_GET_DEV_NAME:
 	ex de,hl
 
 	ld hl,TXT_DEV
-	cp 3 ;ROM disk
+	cp DEV_ROM_DISK
 	jp z,OUTPUT_STRING
 
-	if NUM_SLOTS eq 1
-
 	ld hl,SDSLOT_1_S
-	jp OUTPUT_STRING
-
-	else
-
-	ld a,c
-	dec a
-	ld hl,SDSLOT_1_S
+	if NUM_SLOTS eq 2
+	cp DEV_SD_SLOT_1
 	jp z,OUTPUT_STRING
 	ld hl,SDSLOT_2_S
-	jp OUTPUT_STRING
-
 	endif
+	jp OUTPUT_STRING
 
 DO_DEVQ_GET_PARAMS:
 	ld a,h
@@ -310,22 +308,20 @@ DO_DEVQ_GET_PARAMS:
 	pop ix
 	pop bc	;B = Device number
 	or a
-	jr nz,DO_DEVQ_GET_PARAMS_DEF
-
-	;The ROM disk must not be used by Nextor for its persistent storage
-	;(it's read only, and it's not the device the user boots from)
-	ld a,b
-	cp 3
-	jr nz,DO_DEVQ_GET_PARAMS_OK
-	set 4,(ix+7)
-DO_DEVQ_GET_PARAMS_OK:
-	xor a
-	ret
+	ret z
 
 DO_DEVQ_GET_PARAMS_DEF:
 
 	;Assume error is "device not available" (we checked the device id first),
-	;then return default parameters but with removable bit set
+	;then return default parameters with the removable bit set for the
+	;SD slots. The ROM disk gets the same flags as when it's present:
+	;being an offline fixed device, it doesn't get a drive at boot time.
+	ld c,1 shl DEVICE_QUERY.PARAMF_REMOVABLE
+	ld a,b
+	cp DEV_ROM_DISK
+	jr nz,DO_DEVQ_GET_PARAMS_DEF2
+	ld c,ROM_DISK_PARAM_FLAGS
+DO_DEVQ_GET_PARAMS_DEF2:
 	xor a
 	ld (ix),a
 	ld (ix+1),a
@@ -334,7 +330,7 @@ DO_DEVQ_GET_PARAMS_DEF:
 	ld (ix+4),a
 	ld (ix+5),a
 	ld (ix+6),a
-	ld (ix+7),1	;Removable flag
+	ld (ix+7),c	;Flags
 	ld (ix+8),a
 	ld (ix+9),a
 	ld (ix+10),a
@@ -574,13 +570,13 @@ NEXTOR2_DEV_RW:
 	or a
 	jp z,.error
 
-	cp 3
+	cp	DEV_ROM_DISK
 	jp	z,.romdisk	; ROM disk device
 
-	cp	NUM_SLOTS+1
+	cp	DEV_MAX+1
 	jp	nc,.error
 
-	dec	a	; 0 for slot 1, 1 for slot 2
+	sub	DEV_SD_SLOT_1	; 0 for slot 1, 1 for slot 2
 
 	di
 	call	SD_ON
@@ -699,12 +695,12 @@ NEXTOR2_DEV_RW:
 
 DO_DEVQ_READ_BEFORE_INIT:
 	ld a,c
-	cp 3
+	cp DEV_ROM_DISK
 	ld a,:.IDEVN	;The ROM disk is excluded from the persistent storage
 	ret z
 
 	ld a,c
-	dec a	;0 for slot 1, 1 for slot 2
+	sub DEV_SD_SLOT_1	;0 for slot 1, 1 for slot 2
 	di
 	call SD_ON
 	ld (#5800),a	;SD slot select
@@ -766,11 +762,11 @@ DO_DEVQ_RBI_NRDY:
 ;-----------------------------------------------------------------------------
 NEXTOR2_DEV_INFO:
 
-		;* Check device number, 
+		;* Check device number,
 		;  note that we know already it's valid
-		;  (1,2 or 3 for two slots driver; 1 or 3 for one slot driver)
+		;  (1 to DEV_MAX, see the device number constants)
 
-		cp 3
+		cp DEV_ROM_DISK
 		jp	z,RomDiskInfo		; ROM disk
 
 		;* Check query index
@@ -799,7 +795,7 @@ NEXTOR2_DEV_INFO:
 		;* All input params ok!
 
 		ld a,e	;Device index
-		dec a	;0 for slot 1, 1 for slot 2
+		sub DEV_SD_SLOT_1	;0 for slot 1, 1 for slot 2
 		push de	;Save buffer length in D
 
 		call	GETWRK
@@ -1053,13 +1049,13 @@ Manufacturers:
 ; Non removable logical units may return values 0 and 1.
 ;-----------------------------------------------------------------------------
 NEXTOR2_DEV_STATUS:
-		cp 3
+		cp DEV_ROM_DISK
 		jp	z,RomDiskStatus		; ROM disk
 
 		push bc
 
 		di
-		dec a ;0 for slot 1, 1 for slot 2
+		sub DEV_SD_SLOT_1 ;0 for slot 1, 1 for slot 2
 		call	GETWRK
 		call	SD_ON
 		ld	(#5800),a	; SD slot select
@@ -1153,10 +1149,10 @@ Beep:
 ; For other types of device, these fields must be zero.
 ;-----------------------------------------------------------------------------
 NEXTOR2_LUN_INFO:
-	cp 3
+	cp	DEV_ROM_DISK
 	jp	z,RomDiskLUN_INFO
-	
-	dec	a	;0 for slot 1, 1 for slot 2
+
+	sub	DEV_SD_SLOT_1	;0 for slot 1, 1 for slot 2
 	ld	c,a
 	push	hl
 	di
