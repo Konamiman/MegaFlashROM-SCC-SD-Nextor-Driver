@@ -86,6 +86,14 @@ upb_not_found:					;If anything was wrong with
 ;	HL   = destination address for the transfer
 ;-----------------------------------------------------------------------------
 RomDiskRead:
+		xor	a			; The ROM disk flag is in the
+		call	GETWRK			; work area byte of SD slot 1
+		bit	BIT_ROM_DSK,(ix+0)	; Is ROM disk available?
+		jr	nz,.available
+		ld	b,0
+		ld	a,:.NRDY		; Not ready
+		ret
+.available:
 		di
 		ld	a,(de)
 		ld	c,a
@@ -231,13 +239,11 @@ RomDiskInfo:
 ; Non removable logical units may return values 0 and 1.
 ;-----------------------------------------------------------------------------
 RomDiskStatus:
-		call	GETWRK
+		xor	a			; The ROM disk flag is in the
+		call	GETWRK			; work area byte of SD slot 1
 		bit	BIT_ROM_DSK,(IX+0)	; Is ROM disk available?
 		jr	z,.error
 
-		dec	b
-		jr	nz,.error
-		
 		ld	a,1			; Device available and has not changed
 		ret
 .error:
@@ -282,10 +288,11 @@ RomDiskLUN_INFO:
 		;dec	b
 		;jp	nz,LUN_ERROR
 		
-		call	GETWRK
+		xor	a			; The ROM disk flag is in the
+		call	GETWRK			; work area byte of SD slot 1
 		bit	BIT_ROM_DSK,(IX+0)	; Is ROM disk available?
 		jr	z,.error
-		
+
 		ld	(hl),0		; +0: Medium type = Block device
 		inc	hl
 		
@@ -304,7 +311,7 @@ RomDiskLUN_INFO:
 		ld	(hl),0
 		inc	hl
         	
-		ld	(hl),%011	; +7: Flags ;!!!!!!!
+		ld	(hl),ROM_DISK_PARAM_FLAGS	; +7: Flags
 		inc	hl
 		
 		ld	(hl),0		; +8 Cylinders

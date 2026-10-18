@@ -120,7 +120,7 @@ The [`nextor-dev`](https://github.com/Konamiman/Nextor/pkgs/container/nextor-dev
 ./docker-build.sh clean                 # any extra args are passed to make
 ```
 
-`--variant <suffix>` selects one of the image's kernel base files (`kernel_base<suffix>.dat`). There is a single suffix, `NO_UNDOC` (no undocumented Z80 opcodes, for Z180-based machines); the other variant is the default, suffix-less base, selected by omitting `--variant`. For the `NO_UNDOC` variant the Makefile assembles the driver undoc-free to match, and the variant suffix is reflected in the output ROM names, exactly as with a local build. This repo builds four ROMs per base variant, so `--variant all` builds against every base file the image ships in a single container (eight ROMs in all; this runs `build-all.sh`, described below, inside the image). Run `./docker-build.sh --help` for the full list.
+`--variant <suffix>` selects one of the image's kernel base files (`kernel_base<suffix>.dat`). There is a single suffix, `NO_UNDOC` (no undocumented Z80 opcodes, for Z180-based machines); the other variant is the default, suffix-less base, selected by omitting `--variant`. The driver itself uses no undocumented opcodes, so it is assembled the same way for both variants; the variant suffix is reflected in the output ROM names, exactly as with a local build. This repo builds four ROMs per base variant, so `--variant all` builds against every base file the image ships in a single container (eight ROMs in all; this runs `build-all.sh`, described below, inside the image). Run `./docker-build.sh --help` for the full list.
 
 The image tag used by default is the kernel version this driver is built for (`3.0.0-beta2`); override it with `--image <ref>` or the `NEXTOR_IMAGE` environment variable. Note that the image's `latest` tag tracks stable kernel releases only, so it is not what you want while the driver targets a prerelease.
 
@@ -134,13 +134,13 @@ NEXTOR_BASE=/path/to/Nextor-3.0.0.base.dat make
 
 That produces all four ROM variants, plus `MFRFLASH.COM`, in the `bin/` directory. `make roms` builds only the ROMs and `make tools` only the tool (the latter needs SDCC but no kernel base file; it can also be built standalone with `make -C tools`).
 
-For an undoc-instruction-free build (compatible with Z180-based MSX machines), just point `NEXTOR_BASE` at an undoc-free kernel base:
+The driver uses no undocumented Z80 opcodes, so for a build compatible with Z180-based MSX machines just point `NEXTOR_BASE` at an undoc-free kernel base:
 
 ```sh
 NEXTOR_BASE=/path/to/Nextor-3.0.0.base.NO_UNDOC.dat make
 ```
 
-The Nextor base filename's variant suffix (e.g. `.NO_UNDOC`) is mirrored in the output ROM filenames (the version in them comes from the SDK, not from the base filename), and a `NO_UNDOC` in it makes the Makefile assemble the driver without undocumented opcodes (`NO_UNDOC_CPU_INSTRUCTIONS=1`) so that it matches the kernel. The inference only works when the base file follows one of the two naming conventions (`Nextor-<ver>.base[<suffix>].dat` or `kernel_base[<suffix>].dat`); with a base file named otherwise, set `NO_UNDOC_CPU_INSTRUCTIONS` by hand. An explicit value on the command line or in the environment always wins over the inference.
+The Nextor base filename's variant suffix (e.g. `.NO_UNDOC`) is mirrored in the output ROM filenames (the version in them comes from the SDK, not from the base filename). This only works when the base file follows one of the two naming conventions (`Nextor-<ver>.base[<suffix>].dat` or `kernel_base[<suffix>].dat`); a base file named otherwise yields ROM names with no variant suffix.
 
 #### Building against every kernel base variant
 
@@ -151,7 +151,7 @@ NEXTOR_KERNEL_BASE_DIR=/path/to/Nextor/bin/kernel-base ./build-all.sh
 NEXTOR_KERNEL_BASE_DIR=/path/to/Nextor/bin/kernel-base ./build-all.sh clean-bin all   # extra args go to make
 ```
 
-There is no list of variants to maintain: the script scans the directory and builds against every `.dat` file there named by either convention the Makefile understands (`Nextor-<ver>.base[<suffix>].dat`, as built by the Nextor repository, or `kernel_base[<suffix>].dat`, as shipped in the Docker image), ordering the builds so the driver is reassembled only once when crossing into the undoc-free (`*NO_UNDOC*`) group. With the two variants of Nextor 3.0 that is eight ROMs. If the directory mixes base files from several kernel versions, the ones matching the SDK's version are used (and the script stops if none do). Run `./build-all.sh --help` for the details.
+There is no list of variants to maintain: the script scans the directory and builds against every `.dat` file there named by either convention the Makefile understands (`Nextor-<ver>.base[<suffix>].dat`, as built by the Nextor repository, or `kernel_base[<suffix>].dat`, as shipped in the Docker image). With the two variants of Nextor 3.0 that is eight ROMs. If the directory mixes base files from several kernel versions, the ones matching the SDK's version are used (and the script stops if none do). Run `./build-all.sh --help` for the details.
 
 ### Building without `make`
 
@@ -187,7 +187,7 @@ The other three variants are slight modifications of the same recipe:
   cat tmp/recovery_header.bin Nextor-<ver>.MegaFlashSDSCC.1-slot.ROM \
       > Nextor-<ver>.MegaFlashSDSCC.1-slot.Recovery.ROM
   ```
-- **NO_UNDOC**: add `--define-symbols NO_UNDOC_CPU_INSTRUCTIONS` to *every* `N80` call (regardless of which variant you're building), and use a `Nextor-<ver>.base.NO_UNDOC.dat` kernel base. The driver-side and base-side undoc settings must match.
+- **NO_UNDOC**: just use a `Nextor-<ver>.base.NO_UNDOC.dat` kernel base in the `mknexrom` call; no special assembly flags are needed since the driver doesn't use undocumented opcodes.
 
 ## Make variables
 
@@ -197,7 +197,6 @@ The other three variants are slight modifications of the same recipe:
 | `NEXTOR_SDK`                | Path to the Nextor SDK directory (the one containing `asm/`).        | `external/Nextor/sdk`    |
 | `N80`                       | Path to the Nestor80 assembler.                                      | `N80` (from `PATH`)      |
 | `MKNEXROM`                  | Path to the `mknexrom` tool.                                         | `mknexrom` (from `PATH`) |
-| `NO_UNDOC_CPU_INSTRUCTIONS` | If non-empty (e.g. `=1`), assemble the driver without undocumented opcodes. | _inferred: `1` if the `NEXTOR_BASE` filename's variant suffix contains `NO_UNDOC`, unset otherwise_ |
 | `SDCC`, `SDASZ80`, `OBJCOPY` | Paths to the SDCC compiler and assembler and to GNU `objcopy`, used to build `MFRFLASH.COM` only. | `sdcc`, `sdasz80`, `objcopy` (from `PATH`) |
 
 Build and cleanup targets:

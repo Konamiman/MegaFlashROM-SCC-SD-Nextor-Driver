@@ -22,8 +22,8 @@
 #   NO_UNDOC            no undocumented Z80 opcodes (Z180-safe)
 #   all                 build against every base file the image ships, in
 #                       one container (runs build-all.sh inside it)
-# For the NO_UNDOC variant the Makefile assembles the driver undoc-free to
-# match (it infers NO_UNDOC_CPU_INSTRUCTIONS from the base filename).
+# The driver itself uses no undocumented opcodes, so it is assembled the same
+# way for every variant; only the kernel base and the ROM names differ.
 #
 # The image is pulled automatically on first use. Override it with --image or
 # the NEXTOR_IMAGE environment variable. The default is pinned to the kernel
