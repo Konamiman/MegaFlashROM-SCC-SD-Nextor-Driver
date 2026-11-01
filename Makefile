@@ -1,12 +1,16 @@
 # Makefile for the MegaFlashROM SCC+ SD driver for Nextor 3.
 #
-# By default builds four ROMs (combining this driver with the Nextor
+# By default builds eight ROMs (combining this driver with the Nextor
 # kernel base file pointed at by NEXTOR_BASE), placed in `bin/`:
 #
 #   * bin/Nextor-<ver>.MegaFlashSDSCC.1-slot.ROM             - 1-slot variant
 #   * bin/Nextor-<ver>.MegaFlashSDSCC.1-slot.Recovery.ROM    - 1-slot, prefixed with the recovery header
 #   * bin/Nextor-<ver>.MegaFlashSDSCC.2-slots.ROM            - 2-slots variant
 #   * bin/Nextor-<ver>.MegaFlashSDSCC.2-slots.Recovery.ROM   - 2-slots, prefixed with the recovery header
+#
+# plus the same four without ROM disk support (`.NoRomDisk` after the
+# number of slots, e.g. bin/Nextor-<ver>.MegaFlashSDSCC.1-slot.NoRomDisk.ROM),
+# for hardware that can't implement a ROM disk or users who don't want it.
 #
 # It also builds the flashing tool (`make tools`, included in `all`):
 #
@@ -100,6 +104,11 @@ ROM_1SLOT_RECOVERY  := $(BIN)/$(_DRIVER_PREFIX).1-slot.Recovery$(_VARIANT).ROM
 ROM_2SLOTS          := $(BIN)/$(_DRIVER_PREFIX).2-slots$(_VARIANT).ROM
 ROM_2SLOTS_RECOVERY := $(BIN)/$(_DRIVER_PREFIX).2-slots.Recovery$(_VARIANT).ROM
 
+ROM_1SLOT_NORD           := $(BIN)/$(_DRIVER_PREFIX).1-slot.NoRomDisk$(_VARIANT).ROM
+ROM_1SLOT_NORD_RECOVERY  := $(BIN)/$(_DRIVER_PREFIX).1-slot.NoRomDisk.Recovery$(_VARIANT).ROM
+ROM_2SLOTS_NORD          := $(BIN)/$(_DRIVER_PREFIX).2-slots.NoRomDisk$(_VARIANT).ROM
+ROM_2SLOTS_NORD_RECOVERY := $(BIN)/$(_DRIVER_PREFIX).2-slots.NoRomDisk.Recovery$(_VARIANT).ROM
+
 
 ### Assembly flags ###########################################################
 
@@ -114,7 +123,8 @@ N80_FLAGS := --no-string-escapes --no-show-banner --verbosity 0 \
 .PHONY: all roms tools clean clean-bin distclean setup FORCE
 all: roms tools
 
-roms: $(ROM_1SLOT) $(ROM_1SLOT_RECOVERY) $(ROM_2SLOTS) $(ROM_2SLOTS_RECOVERY)
+roms: $(ROM_1SLOT) $(ROM_1SLOT_RECOVERY) $(ROM_2SLOTS) $(ROM_2SLOTS_RECOVERY) \
+      $(ROM_1SLOT_NORD) $(ROM_1SLOT_NORD_RECOVERY) $(ROM_2SLOTS_NORD) $(ROM_2SLOTS_NORD_RECOVERY)
 
 # The flashing tool has its own Makefile (it needs SDCC rather than N80);
 # it is handed absolute paths since it runs from its own directory.
@@ -132,14 +142,21 @@ $(BIN) $(TMP):
 
 ### Driver binaries (intermediates) ##########################################
 
-# `driver.asm` (which also includes `romdisk.asm`) is assembled twice
-# with different NUM_SLOTS to produce the 1-slot and 2-slots variants.
+# `driver.asm` (which also includes `romdisk.asm`) is assembled four times:
+# with different NUM_SLOTS to produce the 1-slot and 2-slots variants, and
+# each of them with and without NO_ROM_DISK.
 
 $(TMP)/driver.1slot.bin: driver.asm romdisk.asm | $(TMP)
 	$(N80) driver.asm $(TMP)/driver.1slot.bin $(N80_FLAGS) --define-symbols NUM_SLOTS=1
 
 $(TMP)/driver.2slots.bin: driver.asm romdisk.asm | $(TMP)
 	$(N80) driver.asm $(TMP)/driver.2slots.bin $(N80_FLAGS) --define-symbols NUM_SLOTS=2
+
+$(TMP)/driver.1slot.nord.bin: driver.asm | $(TMP)
+	$(N80) driver.asm $(TMP)/driver.1slot.nord.bin $(N80_FLAGS) --define-symbols NUM_SLOTS=1,NO_ROM_DISK
+
+$(TMP)/driver.2slots.nord.bin: driver.asm | $(TMP)
+	$(N80) driver.asm $(TMP)/driver.2slots.nord.bin $(N80_FLAGS) --define-symbols NUM_SLOTS=2,NO_ROM_DISK
 
 # The bank-switching routine for the ASCII8 mapper is the standard one
 # shipped by the Nextor SDK.
@@ -181,6 +198,12 @@ $(ROM_1SLOT): $(TMP)/driver.1slot.bin $(TMP)/chgbnk.bin $(NEXTOR_BASE) $(_BASE_S
 $(ROM_2SLOTS): $(TMP)/driver.2slots.bin $(TMP)/chgbnk.bin $(NEXTOR_BASE) $(_BASE_STAMP) | $(BIN)
 	$(MKNEXROM) $(NEXTOR_BASE) $@ /d:$(TMP)/driver.2slots.bin /m:$(TMP)/chgbnk.bin
 
+$(ROM_1SLOT_NORD): $(TMP)/driver.1slot.nord.bin $(TMP)/chgbnk.bin $(NEXTOR_BASE) $(_BASE_STAMP) | $(BIN)
+	$(MKNEXROM) $(NEXTOR_BASE) $@ /d:$(TMP)/driver.1slot.nord.bin /m:$(TMP)/chgbnk.bin
+
+$(ROM_2SLOTS_NORD): $(TMP)/driver.2slots.nord.bin $(TMP)/chgbnk.bin $(NEXTOR_BASE) $(_BASE_STAMP) | $(BIN)
+	$(MKNEXROM) $(NEXTOR_BASE) $@ /d:$(TMP)/driver.2slots.nord.bin /m:$(TMP)/chgbnk.bin
+
 # Recovery ROMs are the corresponding regular ROM with the recovery
 # header concatenated in front.
 
@@ -189,6 +212,12 @@ $(ROM_1SLOT_RECOVERY): $(ROM_1SLOT) $(TMP)/recovery_header.bin | $(BIN)
 
 $(ROM_2SLOTS_RECOVERY): $(ROM_2SLOTS) $(TMP)/recovery_header.bin | $(BIN)
 	cat $(TMP)/recovery_header.bin $(ROM_2SLOTS) > $@
+
+$(ROM_1SLOT_NORD_RECOVERY): $(ROM_1SLOT_NORD) $(TMP)/recovery_header.bin | $(BIN)
+	cat $(TMP)/recovery_header.bin $(ROM_1SLOT_NORD) > $@
+
+$(ROM_2SLOTS_NORD_RECOVERY): $(ROM_2SLOTS_NORD) $(TMP)/recovery_header.bin | $(BIN)
+	cat $(TMP)/recovery_header.bin $(ROM_2SLOTS_NORD) > $@
 
 
 ### Housekeeping #############################################################

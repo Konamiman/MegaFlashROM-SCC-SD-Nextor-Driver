@@ -48,21 +48,27 @@ jobs:
       - name: Build driver ROMs against every kernel base variant, and the tools
         run: ./docker-build.sh --image "$NEXTOR_IMAGE" --variant all
 
-      # Four ROMs (1-slot, 1-slot.Recovery, 2-slots, 2-slots.Recovery) for
-      # each of the two kernel base variants: 8 in all.
-      - name: Confirm all 8 ROMs were produced
+      # Eight ROMs (1-slot and 2-slots, each with and without ROM disk
+      # support, each plain and with the recovery header) for each of the two
+      # kernel base variants: 16 in all.
+      - name: Confirm all 16 ROMs were produced
         run: |
           set -e
           n=0
           for base in "" .NO_UNDOC; do
-            for rom in .1-slot .1-slot.Recovery .2-slots .2-slots.Recovery; do
-              f="$(ls bin/Nextor-*.MegaFlashSDSCC${rom}${base}.ROM 2>/dev/null || true)"
-              [ -n "$f" ] && [ -s "$f" ] || { echo "Missing or empty: bin/Nextor-*.MegaFlashSDSCC${rom}${base}.ROM"; exit 1; }
-              n=$((n + 1))
+            for slots in .1-slot .2-slots; do
+              for nord in "" .NoRomDisk; do
+                for rec in "" .Recovery; do
+                  name="bin/Nextor-*.MegaFlashSDSCC${slots}${nord}${rec}${base}.ROM"
+                  f="$(ls $name 2>/dev/null || true)"
+                  [ -n "$f" ] && [ -s "$f" ] || { echo "Missing or empty: $name"; exit 1; }
+                  n=$((n + 1))
+                done
+              done
             done
           done
           total=$(ls bin/*.ROM | wc -l)
-          [ "$total" -eq 8 ] || { echo "Expected 8 ROMs in bin/, found $total"; ls bin; exit 1; }
+          [ "$total" -eq 16 ] || { echo "Expected 16 ROMs in bin/, found $total"; ls bin; exit 1; }
           echo "OK: $n ROMs present and non-empty"
 
       - name: Confirm the flashing tool was produced

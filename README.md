@@ -4,7 +4,7 @@ This repository contains the [MegaFlashROM SCC+ SD](https://www.msxcartridgeshop
 
 The driver was originally developed by Manuel Pazos, who kindly provided the source code and gave permission for its publication.
 
-Four variants are built by default:
+Eight variants are built by default:
 
 | Output                                                  | Notes                                                                             |
 | ------------------------------------------------------- | --------------------------------------------------------------------------------- |
@@ -12,17 +12,23 @@ Four variants are built by default:
 | `Nextor-<ver>.MegaFlashSDSCC.1-slot.Recovery.ROM`       | Same as above with a 512-byte header for use as the cartridge's recovery payload. |
 | `Nextor-<ver>.MegaFlashSDSCC.2-slots.ROM`               | Two SD card slots.                                                                |
 | `Nextor-<ver>.MegaFlashSDSCC.2-slots.Recovery.ROM`      | Same as above with the recovery header.                                           |
+| `Nextor-<ver>.MegaFlashSDSCC.1-slot.NoRomDisk.ROM`      | One SD card slot, no ROM disk support.                                            |
+| `Nextor-<ver>.MegaFlashSDSCC.1-slot.NoRomDisk.Recovery.ROM` | Same as above with the recovery header.                                       |
+| `Nextor-<ver>.MegaFlashSDSCC.2-slots.NoRomDisk.ROM`     | Two SD card slots, no ROM disk support.                                           |
+| `Nextor-<ver>.MegaFlashSDSCC.2-slots.NoRomDisk.Recovery.ROM` | Same as above with the recovery header.                                      |
 
 `<ver>` is the kernel version reported by the Nextor SDK (`nextor-kernel-version.txt`), and any kernel-base variant suffix (e.g. `.NO_UNDOC`) is picked up automatically from the `NEXTOR_BASE` filename, see [Building](#building) below.
 
 The 1-slot vs 2-slots distinction matches the hardware configuration of the cartridge. The Recovery variants are intended to be saved on the SD card and loaded from the cartridge's recovery menu; the regular variants are flashed directly to the cartridge ROM.
 
+The NoRomDisk variants don't have ROM disk support at all: the SD card slots are devices 1 and 2 (instead of 2 and 3, with device 1 being the ROM disk) and the driver never touches the flash bank where the ROM disk would be. They are intended for hardware that is compatible with the cartridge's SD card interface but can't implement a ROM disk, and for users who simply don't want one. In particular, the MegaSD controller of the OCM (1chipMSX) and derived FPGA machines is register-compatible with the cartridge's SD card interface, so these machines can use the 1-slot NoRomDisk variant (the 128K ROM goes in the area of the machine's BIOS image where the Nextor kernel lives).
+
 ## Repository contents
 
 | File                  | Purpose                                                                                              |
 | --------------------- | ---------------------------------------------------------------------------------------------------- |
-| `driver.asm`          | The MFRSD driver. Pulls in `romdisk.asm` via an `include`.                                           |
-| `romdisk.asm`         | ROM-disk feature included from `driver.asm`.                                                         |
+| `driver.asm`          | The MFRSD driver. Pulls in `romdisk.asm` via an `include`, except in the NoRomDisk variants.         |
+| `romdisk.asm`         | ROM-disk feature included from `driver.asm` (not used by the NoRomDisk variants).                    |
 | `recovery_header.asm` | 512-byte identification header prepended to the Recovery variants.                                   |
 | `Makefile`            | Build rules; see below.                                                                              |
 | `docker-build.sh`     | Wrapper that builds the ROMs in the Nextor dev Docker image (no local toolchain needed).             |
@@ -113,14 +119,14 @@ There are two ways to build: with the **Nextor dev Docker image** (no local tool
 The [`nextor-dev`](https://github.com/Konamiman/Nextor/pkgs/container/nextor-dev) image bundles `N80`, `mknexrom`, SDCC, the Nextor SDK and both kernel base-file variants, and presets `NEXTOR_BASE` / `NEXTOR_SDK`, so a build needs nothing else on your machine - not even the `external/Nextor` submodule. The `docker-build.sh` wrapper runs the build in a container, mounting this repository and writing the ROMs (and `MFRFLASH.COM`) into `bin/` owned by you (not root):
 
 ```sh
-./docker-build.sh                       # all four ROMs and MFRFLASH.COM, default kernel base
+./docker-build.sh                       # all eight ROMs and MFRFLASH.COM, default kernel base
 ./docker-build.sh tools                 # just MFRFLASH.COM
 ./docker-build.sh --variant NO_UNDOC    # build against the NO_UNDOC kernel base
 ./docker-build.sh --variant all         # build against every base variant
 ./docker-build.sh clean                 # any extra args are passed to make
 ```
 
-`--variant <suffix>` selects one of the image's kernel base files (`kernel_base<suffix>.dat`). There is a single suffix, `NO_UNDOC` (no undocumented Z80 opcodes, for Z180-based machines); the other variant is the default, suffix-less base, selected by omitting `--variant`. The driver itself uses no undocumented opcodes, so it is assembled the same way for both variants; the variant suffix is reflected in the output ROM names, exactly as with a local build. This repo builds four ROMs per base variant, so `--variant all` builds against every base file the image ships in a single container (eight ROMs in all; this runs `build-all.sh`, described below, inside the image). Run `./docker-build.sh --help` for the full list.
+`--variant <suffix>` selects one of the image's kernel base files (`kernel_base<suffix>.dat`). There is a single suffix, `NO_UNDOC` (no undocumented Z80 opcodes, for Z180-based machines); the other variant is the default, suffix-less base, selected by omitting `--variant`. The driver itself uses no undocumented opcodes, so it is assembled the same way for both variants; the variant suffix is reflected in the output ROM names, exactly as with a local build. This repo builds eight ROMs per base variant, so `--variant all` builds against every base file the image ships in a single container (sixteen ROMs in all; this runs `build-all.sh`, described below, inside the image). Run `./docker-build.sh --help` for the full list.
 
 The image tag used by default is the kernel version this driver is built for (`3.0.0-beta2`); override it with `--image <ref>` or the `NEXTOR_IMAGE` environment variable. Note that the image's `latest` tag tracks stable kernel releases only, so it is not what you want while the driver targets a prerelease.
 
@@ -132,7 +138,7 @@ The build needs a Nextor kernel base file, supplied via `NEXTOR_BASE`:
 NEXTOR_BASE=/path/to/Nextor-3.0.0.base.dat make
 ```
 
-That produces all four ROM variants, plus `MFRFLASH.COM`, in the `bin/` directory. `make roms` builds only the ROMs and `make tools` only the tool (the latter needs SDCC but no kernel base file; it can also be built standalone with `make -C tools`).
+That produces all eight ROM variants, plus `MFRFLASH.COM`, in the `bin/` directory. `make roms` builds only the ROMs and `make tools` only the tool (the latter needs SDCC but no kernel base file; it can also be built standalone with `make -C tools`).
 
 The driver uses no undocumented Z80 opcodes, so for a build compatible with Z180-based MSX machines just point `NEXTOR_BASE` at an undoc-free kernel base:
 
@@ -151,7 +157,7 @@ NEXTOR_KERNEL_BASE_DIR=/path/to/Nextor/bin/kernel-base ./build-all.sh
 NEXTOR_KERNEL_BASE_DIR=/path/to/Nextor/bin/kernel-base ./build-all.sh clean-bin all   # extra args go to make
 ```
 
-There is no list of variants to maintain: the script scans the directory and builds against every `.dat` file there named by either convention the Makefile understands (`Nextor-<ver>.base[<suffix>].dat`, as built by the Nextor repository, or `kernel_base[<suffix>].dat`, as shipped in the Docker image). With the two variants of Nextor 3.0 that is eight ROMs. If the directory mixes base files from several kernel versions, the ones matching the SDK's version are used (and the script stops if none do). Run `./build-all.sh --help` for the details.
+There is no list of variants to maintain: the script scans the directory and builds against every `.dat` file there named by either convention the Makefile understands (`Nextor-<ver>.base[<suffix>].dat`, as built by the Nextor repository, or `kernel_base[<suffix>].dat`, as shipped in the Docker image). With the two variants of Nextor 3.0 that is sixteen ROMs. If the directory mixes base files from several kernel versions, the ones matching the SDK's version are used (and the script stops if none do). Run `./build-all.sh --help` for the details.
 
 ### Building without `make`
 
@@ -176,9 +182,10 @@ mknexrom /path/to/Nextor-<ver>.base.dat Nextor-<ver>.MegaFlashSDSCC.1-slot.ROM \
     /d:tmp/driver.1slot.bin /m:tmp/chgbnk.bin
 ```
 
-The other three variants are slight modifications of the same recipe:
+The other variants are slight modifications of the same recipe:
 
 - **2-slots**: change `--define-symbols NUM_SLOTS=1` to `NUM_SLOTS=2`, write the driver to a different filename (e.g. `tmp/driver.2slots.bin`), and pick the matching `Nextor-<ver>.MegaFlashSDSCC.2-slots.ROM` output name.
+- **NoRomDisk**: add `NO_ROM_DISK` to the symbols defined for the driver (`--define-symbols NUM_SLOTS=1,NO_ROM_DISK`), write the driver to a different filename (e.g. `tmp/driver.1slot.nord.bin`), and pick the matching `Nextor-<ver>.MegaFlashSDSCC.1-slot.NoRomDisk.ROM` output name.
 - **Recovery**: assemble `recovery_header.asm` into a small `.bin`, then concatenate it in front of the corresponding regular ROM:
   ```sh
   N80 recovery_header.asm tmp/ \
@@ -203,8 +210,8 @@ Build and cleanup targets:
 
 | Target           | Effect                                                                                                          |
 | ---------------- | --------------------------------------------------------------------------------------------------------------- |
-| `make` / `make all` | Builds the four ROMs and `MFRFLASH.COM`.                                                                     |
-| `make roms`      | Builds only the four ROMs.                                                                                      |
+| `make` / `make all` | Builds the eight ROMs and `MFRFLASH.COM`.                                                                    |
+| `make roms`      | Builds only the eight ROMs.                                                                                     |
 | `make tools`     | Builds only `MFRFLASH.COM` (no `NEXTOR_BASE` needed).                                                           |
 | `make clean`     | Removes `tmp/` (intermediate `.bin` files, the SDCC output and helper artifacts). `bin/` and the shippable files in it are kept. |
 | `make clean-bin` | Removes `bin/` (the shippable ROMs and tool).                                                                   |

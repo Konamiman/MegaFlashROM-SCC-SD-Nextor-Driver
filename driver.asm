@@ -8,6 +8,11 @@
 ; 30/05/2025 - v1.5 Fixed SD card type identification
 ; 01/10/2026 - v1.6 Implement the READ_BEFORE_INIT query
 ; 01/11/2027 - v1.7 Make ROM disk have device number 1 again
+;
+; Define the NO_ROM_DISK symbol to build the driver without ROM disk support,
+; for hardware that can't implement it (e.g. the MegaSD controller of the
+; OCM/1chipMSX machines) or users who don't want it. The SD card slots are
+; then devices 1 and 2.
 ;-----------------------------------------------------------------------------
 
 	.RELAB
@@ -49,9 +54,14 @@ WORK_AREA_SIZE	equ	0	; RAM needed by the driver
 	endif
 
 ; Device numbers
+	ifdef NO_ROM_DISK
+DEV_SD_SLOT_1	equ	1	; SD slot 1
+DEV_SD_SLOT_2	equ	2	; SD slot 2 (2 slots variant only)
+	else
 DEV_ROM_DISK	equ	1	; ROM disk
 DEV_SD_SLOT_1	equ	2	; SD slot 1
 DEV_SD_SLOT_2	equ	3	; SD slot 2 (2 slots variant only)
+	endif
 DEV_MAX		equ	DEV_SD_SLOT_1 + NUM_SLOTS - 1
 
 ; Work area offsets
@@ -284,9 +294,11 @@ DO_DEVQ_GET_DEV_NAME:
 	ld b,d
 	ex de,hl
 
+	ifndef NO_ROM_DISK
 	ld hl,TXT_DEV
 	cp DEV_ROM_DISK
 	jp z,OUTPUT_STRING
+	endif
 
 	ld hl,SDSLOT_1_S
 	if NUM_SLOTS eq 2
@@ -318,11 +330,13 @@ DO_DEVQ_GET_PARAMS_DEF:
 	;SD slots. The ROM disk gets the same flags as when it's present:
 	;being an offline fixed device, it doesn't get a drive at boot time.
 	ld c,1 shl DEVICE_QUERY.PARAMF_REMOVABLE
+	ifndef NO_ROM_DISK
 	ld a,b
 	cp DEV_ROM_DISK
 	jr nz,DO_DEVQ_GET_PARAMS_DEF2
 	ld c,ROM_DISK_PARAM_FLAGS
 DO_DEVQ_GET_PARAMS_DEF2:
+	endif
 	xor a
 	ld (ix),a
 	ld (ix+1),a
@@ -429,6 +443,7 @@ NEXTOR2_DRV_INIT:
 		call	PRINT		; Driver info
 
 		ld	c,0
+		ifndef NO_ROM_DISK
 		call	RomDiskCheck
 		jr	nz,.notFound	; ROM disk not found
 
@@ -437,6 +452,7 @@ NEXTOR2_DRV_INIT:
 
 		ld	c,1		; Flag ROM disk found
 .notFound:		
+		endif
 		ld	b,NUM_SLOTS
 .loop:	
 		push	bc
@@ -571,8 +587,10 @@ NEXTOR2_DEV_RW:
 	or a
 	jp z,.error
 
+	ifndef NO_ROM_DISK
 	cp	DEV_ROM_DISK
 	jp	z,.romdisk	; ROM disk device
+	endif
 
 	cp	DEV_MAX+1
 	jp	nc,.error
@@ -668,6 +686,7 @@ NEXTOR2_DEV_RW:
 ;----------
 ; ROM disk
 ;----------
+	ifndef NO_ROM_DISK
 .romdisk:
 	dec	c		; LUN
 	jp	nz,.error
@@ -676,6 +695,7 @@ NEXTOR2_DEV_RW:
 	jr	c,.writeError	; Can't write in ROM
 
 	jp	RomDiskRead
+	endif
 
 
 	;--- Device query 8: read device sectors before initialization.
@@ -695,10 +715,12 @@ NEXTOR2_DEV_RW:
 	;    Output: A  = Error code, as in READ_WRITE
 
 DO_DEVQ_READ_BEFORE_INIT:
+	ifndef NO_ROM_DISK
 	ld a,c
 	cp DEV_ROM_DISK
 	ld a,:.IDEVN	;The ROM disk is excluded from the persistent storage
 	ret z
+	endif
 
 	ld a,c
 	sub DEV_SD_SLOT_1	;0 for slot 1, 1 for slot 2
@@ -767,8 +789,10 @@ NEXTOR2_DEV_INFO:
 		;  note that we know already it's valid
 		;  (1 to DEV_MAX, see the device number constants)
 
+		ifndef NO_ROM_DISK
 		cp DEV_ROM_DISK
 		jp	z,RomDiskInfo		; ROM disk
+		endif
 
 		;* Check query index
 
@@ -1050,8 +1074,10 @@ Manufacturers:
 ; Non removable logical units may return values 0 and 1.
 ;-----------------------------------------------------------------------------
 NEXTOR2_DEV_STATUS:
+		ifndef NO_ROM_DISK
 		cp DEV_ROM_DISK
 		jp	z,RomDiskStatus		; ROM disk
+		endif
 
 		push bc
 
@@ -1150,8 +1176,10 @@ Beep:
 ; For other types of device, these fields must be zero.
 ;-----------------------------------------------------------------------------
 NEXTOR2_LUN_INFO:
+	ifndef NO_ROM_DISK
 	cp	DEV_ROM_DISK
 	jp	z,RomDiskLUN_INFO
+	endif
 
 	sub	DEV_SD_SLOT_1	;0 for slot 1, 1 for slot 2
 	ld	c,a
@@ -2166,7 +2194,9 @@ PRINT:
 ;-----------------------------------------------------------------------------
 ; Includes
 ;-----------------------------------------------------------------------------
+		ifndef NO_ROM_DISK
 		include	"romdisk.asm"
+		endif
 
 
 ;-----------------------------------------------------------------------------
@@ -2188,9 +2218,11 @@ TXT_EMPTY:
 TXT_INIT:
 		db	"SD Card slot ",0
 
+		ifndef NO_ROM_DISK
 TXT_ROMDSKOK:
 		db	"ROM Disk found.",13,10
 		db	13,10,0
+		endif
 
 TXT_MMC:
 		db	" MMC",13,10,0
